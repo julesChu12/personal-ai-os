@@ -4,7 +4,7 @@
 
 ## 当前阶段判断
 
-项目已经完成“本地可用 + Open WebUI 接入 + 长期记忆基础闭环 + P0 基础服务硬化 + P1 运行质量基础版 + P2 工具层基础版 + P3 多步骤 Agent 执行基础 + 开源工程化基础”的核心底座。
+项目已经完成“本地可用 + Open WebUI 接入 + 长期记忆基础闭环 + P0 基础服务硬化 + P1 运行质量基础版 + P2 工具层基础版 + P3 Agent 执行与记忆沉淀基础 + 开源工程化基础”的核心底座。
 
 按完整 Personal AI OS 愿景估算，整体进度约为 85%左右。按当前阶段目标“可本地长期运行、可开源协作、基础服务可信、工具调用可控可审计、最小 Agent 闭环可验证”估算，进度约为 99%左右。
 
@@ -32,7 +32,7 @@
 
 - Planner 支持更明确的任务 DSL 或结构化计划输入。
 - Executor 支持多步骤执行和失败短路策略。
-- Agent 结果可以按策略进入长期记忆。
+- Agent 结果可以按显式策略进入长期记忆。
 - 普通聊天、记忆写入和 OpenAI-compatible 路径继续不能被多 Agent 改造破坏。
 
 ## P0：基础服务硬化
@@ -361,13 +361,14 @@ Tool Registry、request id、数据库迁移基础。
 
 ## P3：真正多 Agent 编排
 
-P3 回归状态：P3-1、P3-2 和 P3-3 已完成基础版，最近一次完整回归通过 `make ci`，覆盖 Planner / Executor workflow、Structured Agent Plan、多步骤 failure short-circuit、Agent API、ToolRun 审计和项目合同测试。
+P3 回归状态：P3-1、P3-2、P3-3 和 P3-4 已完成基础版，最近一次完整回归通过 `make ci`，覆盖 Planner / Executor workflow、Structured Agent Plan、多步骤 failure short-circuit、Agent 结果记忆沉淀、Agent API、ToolRun 审计和项目合同测试。
 
 | Task | 状态 | 回归覆盖 | 文档状态 |
 | --- | --- | --- | --- |
 | P3-1 Planner / Executor 最小工作流 | 已完成基础版 | `tests/test_agent_workflow.py`、`tests/test_agents_route.py`、项目合同测试 | README、testing docs 已覆盖 |
 | P3-2 Structured Agent Plan | 已完成基础版 | `tests/test_agent_plan.py`、`tests/test_agent_workflow.py`、`tests/test_agents_route.py`、项目合同测试 | README、testing docs 已覆盖 |
 | P3-3 多步骤 Executor 失败短路策略 | 已完成基础版 | `tests/test_agent_workflow.py`、`tests/test_agents_route.py`、项目合同测试 | testing docs 已覆盖 |
+| P3-4 Agent 结果按策略进入长期记忆 | 已完成基础版 | `tests/test_agent_workflow.py`、`tests/test_agents_route.py`、项目合同测试 | testing docs 已覆盖 |
 
 ### Task P3-1：Planner / Executor 最小工作流
 
@@ -461,6 +462,36 @@ P3-2 Structured Agent Plan、Tool Registry、ToolRun 审计。
 当前实现说明：
 `AgentWorkflow.run()` 在每个工具步骤执行并记录审计后检查结果状态；当 `ToolInvocationResult.status != "ok"` 时立即停止循环。响应继续使用第一个失败步骤作为 `error` 来源，`agent_trace` 只记录实际发生的 planner/validator 和 executor 动作。
 
+### Task P3-4：Agent 结果按策略进入长期记忆
+
+状态：已完成基础版。
+
+功能摘要：
+在 Agent workflow 成功完成后，按显式策略把最终结果沉淀为长期记忆，复用现有 MemoryPipeline。
+
+执行原因：
+多 Agent 的执行结果如果完全不进入长期记忆，系统无法从已完成任务中积累经验；但全量自动写入会污染记忆库，尤其是工具输出可能包含临时路径、状态噪声或失败信息。因此先采用显式 `memory_agent` 策略，只保存调用方明确要求沉淀的成功结果。
+
+主要产出：
+- `AgentWorkflow.run(..., persist_agent_result=...)`
+- `agent_result` 记忆候选构造
+- `/agents/run` 根据 `agents` 中是否包含 `memory_agent` 决定是否沉淀
+- workflow 层成功沉淀和失败不沉淀回归测试
+- API 层显式沉淀和默认不沉淀回归测试
+
+验收标准：
+- 默认 `/agents/run` 不自动写长期记忆。
+- `agents` 包含 `memory_agent` 且工作流成功时，写入一条 `agent_result` 记忆候选。
+- 失败工作流、空 answer 或缺少有效 session_id 时不写长期记忆。
+- 记忆写入复用 `MemoryPipeline.persist()`，不新增并行持久化路径。
+- 响应包含 `memory_saved`，用于观察本次沉淀数量。
+
+依赖：
+P3-1 AgentWorkflow、P3-2 Structured Agent Plan、P3-3 failure short-circuit、P1 Memory governance。
+
+当前实现说明：
+`AgentWorkflow` 支持注入 `MemoryPipeline`，便于测试和后续替换。`POST /agents/run` 通过 `agents` 列表中的 `memory_agent` 启用结果沉淀；成功结果会构造 `MemoryCandidate(memory_type="agent_result")`，标题格式为 `Agent result: <task>`，内容包含 task 和 answer。沉淀失败不会改变主工作流工具执行结果，当前以 `memory_saved=0` 表达未写入。
+
 ## 暂缓任务
 
 ### Obsidian 单向导入 / 双向同步
@@ -489,6 +520,7 @@ P3-2 Structured Agent Plan、Tool Registry、ToolRun 审计。
 12. P3-1 最小多 Agent 工作流
 13. P3-2 Structured Agent Plan
 14. P3-3 多步骤 Executor 失败短路策略
+15. P3-4 Agent 结果按策略进入长期记忆
 
 ## 每次任务完成必须验证
 

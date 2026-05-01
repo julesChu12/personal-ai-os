@@ -8,6 +8,22 @@ from app.db.models import ToolRun
 from app.tools.registry import build_default_tool_registry
 
 
+class RecordingMemoryPipeline:
+    def __init__(self) -> None:
+        self.persist_calls = []
+
+    def persist(self, db, user_id, project_id, session_id, candidates):
+        self.persist_calls.append(
+            {
+                "user_id": user_id,
+                "project_id": project_id,
+                "session_id": session_id,
+                "candidates": candidates,
+            }
+        )
+        return candidates
+
+
 def build_db_session():
     engine = create_engine(
         "sqlite:///:memory:",
@@ -192,6 +208,73 @@ def test_agent_workflow_stops_after_later_failed_step(tmp_path):
     assert db.query(ToolRun).count() == 2
 
 
+def test_agent_workflow_persists_successful_agent_result_when_requested(tmp_path):
+    note = tmp_path / "note.md"
+    note.write_text("memory worthy output", encoding="utf-8")
+    db = build_db_session()
+    memory_pipeline = RecordingMemoryPipeline()
+    workflow = AgentWorkflow(
+        registry=build_default_tool_registry(base_dir=str(tmp_path)),
+        memory_pipeline=memory_pipeline,
+    )
+
+    result = workflow.run(
+        db=db,
+        user_id="u1",
+        project_id="p1",
+        session_id="s1",
+        task="read file note.md",
+        request_id="req-agent-memory",
+        persist_agent_result=True,
+    )
+
+    assert result["status"] == "ok"
+    assert result["memory_saved"] == 1
+    assert len(memory_pipeline.persist_calls) == 1
+    call = memory_pipeline.persist_calls[0]
+    assert call["user_id"] == "u1"
+    assert call["project_id"] == "p1"
+    assert call["session_id"] == "s1"
+    candidate = call["candidates"][0]
+    assert candidate.memory_type == "agent_result"
+    assert candidate.title == "Agent result: read file note.md"
+    assert "Task: read file note.md" in candidate.content
+    assert "memory worthy output" in candidate.content
+    assert "agent" in candidate.tags
+
+
+def test_agent_workflow_does_not_persist_failed_agent_result(tmp_path):
+    db = build_db_session()
+    memory_pipeline = RecordingMemoryPipeline()
+    workflow = AgentWorkflow(
+        registry=build_default_tool_registry(base_dir=str(tmp_path)),
+        memory_pipeline=memory_pipeline,
+    )
+
+    result = workflow.run(
+        db=db,
+        user_id="u1",
+        project_id="p1",
+        session_id="s1",
+        task="ignored when plan is supplied",
+        request_id="req-agent-memory-failed",
+        persist_agent_result=True,
+        plan_payload={
+            "steps": [
+                {
+                    "tool_name": "file.read_text",
+                    "input": {"path": "missing.md"},
+                    "reason": "read missing note",
+                }
+            ]
+        },
+    )
+
+    assert result["status"] == "error"
+    assert result["memory_saved"] == 0
+    assert memory_pipeline.persist_calls == []
+
+
 def test_agent_workflow_rejects_invalid_structured_plan_without_tool_run(tmp_path):
     db = build_db_session()
     workflow = AgentWorkflow(registry=build_default_tool_registry(base_dir=str(tmp_path)))
@@ -216,6 +299,7 @@ def test_agent_workflow_rejects_invalid_structured_plan_without_tool_run(tmp_pat
 
     assert result["status"] == "error"
     assert "command must be one of" in result["error"]
+    assert result["memory_saved"] == 0
     assert result["steps"] == []
     assert db.query(ToolRun).count() == 0
 
@@ -235,5 +319,6 @@ def test_agent_workflow_rejects_unsupported_tasks_without_tool_run(tmp_path):
 
     assert result["status"] == "error"
     assert "unsupported agent task" in result["error"]
+    assert result["memory_saved"] == 0
     assert result["steps"] == []
     assert db.query(ToolRun).count() == 0

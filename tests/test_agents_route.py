@@ -11,6 +11,22 @@ from app.db.models import ToolRun
 from app.tools.registry import build_default_tool_registry
 
 
+class RecordingMemoryPipeline:
+    def __init__(self) -> None:
+        self.persist_calls = []
+
+    def persist(self, db, user_id, project_id, session_id, candidates):
+        self.persist_calls.append(
+            {
+                "user_id": user_id,
+                "project_id": project_id,
+                "session_id": session_id,
+                "candidates": candidates,
+            }
+        )
+        return candidates
+
+
 def build_client(tmp_path) -> TestClient:
     engine = create_engine(
         "sqlite:///:memory:",
@@ -31,7 +47,10 @@ def build_client(tmp_path) -> TestClient:
     app.include_router(routes_agents.router)
     app.dependency_overrides[routes_agents.get_db] = get_test_db
     app.dependency_overrides[routes_agents.get_tool_registry] = lambda: build_default_tool_registry(base_dir=str(tmp_path))
+    memory_pipeline = RecordingMemoryPipeline()
+    app.dependency_overrides[routes_agents.get_memory_pipeline] = lambda: memory_pipeline
     app.state.testing_session = testing_session
+    app.state.memory_pipeline = memory_pipeline
     return TestClient(app)
 
 
@@ -199,6 +218,58 @@ def test_agents_run_endpoint_stops_after_failed_plan_step(tmp_path):
         assert runs[0].tool_name == "file.read_text"
     finally:
         db.close()
+
+
+def test_agents_run_endpoint_persists_result_when_memory_agent_requested(tmp_path):
+    note = tmp_path / "note.md"
+    note.write_text("route memory output", encoding="utf-8")
+    client = build_client(tmp_path)
+
+    response = client.post(
+        "/agents/run",
+        json={
+            "user_id": "u1",
+            "project_id": "p1",
+            "session_id": "s1",
+            "task": "read file note.md",
+            "agents": ["planner", "executor", "memory_agent"],
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["memory_saved"] == 1
+
+    calls = client.app.state.memory_pipeline.persist_calls
+    assert len(calls) == 1
+    candidate = calls[0]["candidates"][0]
+    assert candidate.memory_type == "agent_result"
+    assert candidate.title == "Agent result: read file note.md"
+    assert "route memory output" in candidate.content
+
+
+def test_agents_run_endpoint_does_not_persist_result_without_memory_agent(tmp_path):
+    note = tmp_path / "note.md"
+    note.write_text("route no memory output", encoding="utf-8")
+    client = build_client(tmp_path)
+
+    response = client.post(
+        "/agents/run",
+        json={
+            "user_id": "u1",
+            "project_id": "p1",
+            "session_id": "s1",
+            "task": "read file note.md",
+            "agents": ["planner", "executor"],
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["memory_saved"] == 0
+    assert client.app.state.memory_pipeline.persist_calls == []
 
 
 def test_agents_run_endpoint_returns_error_for_unsupported_task(tmp_path):

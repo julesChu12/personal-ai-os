@@ -263,6 +263,18 @@ P3-3 多步骤执行的回归重点是 failure short-circuit：顺序执行的 p
 
 失败步骤仍会写入 `ToolRun`，用于审计具体失败原因；被短路跳过的后续步骤不会执行，也不会写入 `ToolRun`。响应保持 `status=error`，`error` 使用第一个失败步骤的错误原因，`steps` 只包含已经实际执行的步骤。
 
+## Agent result memory
+
+P3-4 Agent 结果沉淀采用显式策略，避免普通工具调用污染长期记忆：
+
+- 只有 `POST /agents/run` 的 `agents` 中包含 `memory_agent` 时，才允许成功结果进入长期记忆。
+- 只有工作流最终 `status=ok` 且 `answer` 非空时，才构造 `agent_result` 记忆候选。
+- 失败工作流、空输出或缺少有效 `session_id` 时不写长期记忆。
+- `tests/test_agent_workflow.py` 覆盖 workflow 层成功沉淀和失败不沉淀。
+- `tests/test_agents_route.py` 覆盖 API 层 `memory_agent` 显式策略和默认不沉淀策略。
+
+沉淀内容复用 `MemoryPipeline.persist()`，候选类型为 `agent_result`，标题格式为 `Agent result: <task>`，内容包含原始 task 和最终 answer。响应中的 `memory_saved` 表示本次成功写入或复用的记忆数量。
+
 ## Retrieval quality
 
 检索质量评估使用固定 golden dataset，默认 fixture 为：
@@ -325,7 +337,7 @@ python scripts/evaluate_qdrant_retrieval_quality.py --json
 - Retrieval quality：固定记忆样本、查询样本、top-k 命中率和 JSON 评估输出。
 - Qdrant retrieval quality：把固定样本写入 Qdrant 后，通过 `VectorStore.search` 验证真实检索路径。
 - Scheduler：启动注册、生命周期托管、定时摘要任务行为。
-- Agent workflow：Planner 生成受控工具步骤、Executor 通过 Tool Registry 执行、ToolRun 审计记录、unsupported task 不执行工具、多步骤失败短路。
+- Agent workflow：Planner 生成受控工具步骤、Executor 通过 Tool Registry 执行、ToolRun 审计记录、unsupported task 不执行工具、多步骤失败短路、显式 `memory_agent` 结果沉淀。
 - Docker smoke：运行中 API 的健康检查、模型发现和基础检索接口。
 - End-to-end smoke：可选验证聊天写入和记忆召回闭环。
 

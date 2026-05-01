@@ -8,6 +8,7 @@ from app.api.request_validation import normalize_optional_string, require_non_bl
 from app.agents.workflow import AgentWorkflow
 from app.core.request_context import REQUEST_ID_HEADER, get_request_id
 from app.db.database import get_db
+from app.memory.memory_pipeline import MemoryPipeline
 from app.tools.registry import ToolRegistry, build_default_tool_registry
 
 router = APIRouter()
@@ -26,6 +27,10 @@ def get_tool_registry() -> ToolRegistry:
     return build_default_tool_registry()
 
 
+def get_memory_pipeline() -> MemoryPipeline:
+    return MemoryPipeline()
+
+
 @router.get("/agents")
 def agents():
     return {
@@ -40,8 +45,9 @@ def run_agent_workflow(
     request: Request,
     db: Session = Depends(get_db),
     registry: ToolRegistry = Depends(get_tool_registry),
+    memory_pipeline: MemoryPipeline = Depends(get_memory_pipeline),
 ) -> dict[str, Any]:
-    workflow = AgentWorkflow(registry=registry)
+    workflow = AgentWorkflow(registry=registry, memory_pipeline=memory_pipeline)
     return workflow.run(
         db=db,
         user_id=require_non_blank("user_id", payload.user_id),
@@ -50,8 +56,13 @@ def run_agent_workflow(
         task=payload.task,
         request_id=_request_id_from_request(request),
         plan_payload=payload.plan,
+        persist_agent_result=_should_persist_agent_result(payload.agents),
     )
 
 
 def _request_id_from_request(request: Request) -> str | None:
     return request.headers.get(REQUEST_ID_HEADER) or get_request_id(None)
+
+
+def _should_persist_agent_result(agents: list[str]) -> bool:
+    return "memory_agent" in {agent.strip().lower() for agent in agents}

@@ -266,16 +266,22 @@ def test_p3_agent_workflow_contract_is_documented():
     assert "class AgentWorkflow" in workflow
     assert "record_tool_run" in workflow
     assert "plan_payload" in workflow
+    assert "persist_agent_result" in workflow
+    assert "MemoryPipeline" in workflow
     assert "plan:" in routes_agents
+    assert "memory_agent" in routes_agents
     assert "@router.post(\"/agents/run\")" in routes_agents
     assert "Agent workflow" in testing
     assert "Structured Agent Plan" in testing
     assert "failure short-circuit" in testing
+    assert "agent_result" in testing
     assert "Task P3-1" in roadmap
     assert "Task P3-2" in roadmap
     assert "Task P3-3" in roadmap
+    assert "Task P3-4" in roadmap
     assert "Planner / Executor 最小工作流" in roadmap
     assert "多步骤 Executor 失败短路策略" in roadmap
+    assert "Agent 结果按策略进入长期记忆" in roadmap
     assert "已完成基础版" in roadmap
 
 
