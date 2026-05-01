@@ -58,6 +58,11 @@ class ToolRegistry:
     def list_tools(self) -> list[ToolDefinition]:
         return [self._tools[name][0] for name in sorted(self._tools)]
 
+    def get_definition(self, name: str) -> ToolDefinition:
+        if name not in self._tools:
+            raise ToolNotFoundError(name)
+        return self._tools[name][0]
+
     def invoke(self, name: str, input_payload: dict[str, Any] | None = None) -> ToolInvocationResult:
         if name not in self._tools:
             raise ToolNotFoundError(name)

@@ -258,14 +258,20 @@ def test_p3_agent_workflow_contract_is_documented():
     roadmap = read_text("docs/development-roadmap.md")
 
     assert "class AgentStep" in planner
+    assert "validate_agent_plan" in planner
+    assert "AgentPlanValidationError" in planner
     assert "def plan" in planner
     assert "class ExecutorAgent" in executor
     assert "def execute" in executor
     assert "class AgentWorkflow" in workflow
     assert "record_tool_run" in workflow
+    assert "plan_payload" in workflow
+    assert "plan:" in routes_agents
     assert "@router.post(\"/agents/run\")" in routes_agents
     assert "Agent workflow" in testing
+    assert "Structured Agent Plan" in testing
     assert "Task P3-1" in roadmap
+    assert "Task P3-2" in roadmap
     assert "Planner / Executor 最小工作流" in roadmap
     assert "已完成基础版" in roadmap
 

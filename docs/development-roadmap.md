@@ -361,11 +361,12 @@ Tool Registry、request id、数据库迁移基础。
 
 ## P3：真正多 Agent 编排
 
-P3 回归状态：P3-1 已完成基础版，最近一次完整回归通过 `make ci`，覆盖 Planner / Executor workflow、Agent API、ToolRun 审计和项目合同测试。
+P3 回归状态：P3-1 和 P3-2 已完成基础版，最近一次完整回归通过 `make ci`，覆盖 Planner / Executor workflow、Structured Agent Plan、Agent API、ToolRun 审计和项目合同测试。
 
 | Task | 状态 | 回归覆盖 | 文档状态 |
 | --- | --- | --- | --- |
 | P3-1 Planner / Executor 最小工作流 | 已完成基础版 | `tests/test_agent_workflow.py`、`tests/test_agents_route.py`、项目合同测试 | README、testing docs 已覆盖 |
+| P3-2 Structured Agent Plan | 已完成基础版 | `tests/test_agent_plan.py`、`tests/test_agent_workflow.py`、`tests/test_agents_route.py`、项目合同测试 | README、testing docs 已覆盖 |
 
 ### Task P3-1：Planner / Executor 最小工作流
 
@@ -396,6 +397,39 @@ Tool Registry、memory governance、request id。
 当前实现说明：
 已提供 `AgentWorkflow`、`PlannerAgent.plan()` 和 `ExecutorAgent.execute()`。当前 Planner 仅支持 `read file <path>`、`pwd` / `show cwd`、`git status` 三类确定性任务；unsupported task 返回 `status=error`，不会执行工具或写入 tool run。`POST /agents/run` 会执行最小工作流，并复用 Tool Registry 和 ToolRun 审计。
 
+### Task P3-2：Structured Agent Plan
+
+状态：已完成基础版。
+
+功能摘要：
+定义结构化 Agent plan schema，让外部或模型生成的计划在进入 Executor 前先通过工具名、输入字段和 enum 白名单校验。
+
+执行原因：
+P3-1 已经有最小 Planner / Executor 闭环，但 Planner 仍以硬编码单步任务为主。下一步如果要接入模型生成计划或多步骤执行，必须先把 plan 结构和安全校验固定下来，否则 Executor 会承担过多防御逻辑。
+
+主要产出：
+- `AgentPlanValidationError`
+- `validate_agent_plan()`
+- ToolRegistry definition 查询
+- `/agents/run` 可选 `plan` 输入
+- 结构化 plan 回归测试
+
+验收标准：
+- 合法 `steps[{tool_name,input,reason}]` 可以转换为 `AgentPlan`。
+- 未注册工具会被拒绝。
+- 缺少 required input 会被拒绝。
+- `shell.run_safe.command` 不在 enum 内会被拒绝。
+- plan 超过 10 个步骤会被拒绝。
+- input 中出现工具 schema 未声明字段会被拒绝。
+- `/agents/run` 会拒绝空 `user_id/project_id`，空 `session_id` 归一为 `null`。
+- 被拒绝的 plan 不执行工具，也不写入 tool run。
+
+依赖：
+Tool Registry、P3-1 AgentWorkflow。
+
+当前实现说明：
+已提供 `validate_agent_plan(raw_plan, registry)`，基于 Tool Registry 的 `ToolDefinition.input_schema` 做最小 JSON-schema 风格校验。外部 plan 最多 10 个步骤，未知 input 字段默认拒绝，避免单请求工具调用和审计 payload 放大。`AgentWorkflow.run(..., plan_payload=...)` 会优先校验外部 plan；校验失败返回 `status=error` 并跳过工具执行。
+
 ## 暂缓任务
 
 ### Obsidian 单向导入 / 双向同步
@@ -422,6 +456,7 @@ Tool Registry、memory governance、request id。
 10. P2-2 MCP / Tool Adapter
 11. P2-3 Tool Run 审计
 12. P3-1 最小多 Agent 工作流
+13. P3-2 Structured Agent Plan
 
 ## 每次任务完成必须验证
 

@@ -47,6 +47,64 @@ def test_agent_workflow_reads_file_and_records_tool_run(tmp_path):
     assert runs[0].request_id == "req-agent-1"
 
 
+def test_agent_workflow_executes_valid_structured_plan(tmp_path):
+    note = tmp_path / "note.md"
+    note.write_text("structured plan output", encoding="utf-8")
+    db = build_db_session()
+    workflow = AgentWorkflow(registry=build_default_tool_registry(base_dir=str(tmp_path)))
+
+    result = workflow.run(
+        db=db,
+        user_id="u1",
+        project_id="p1",
+        session_id="s1",
+        task="ignored when plan is supplied",
+        request_id="req-agent-plan",
+        plan_payload={
+            "steps": [
+                {
+                    "tool_name": "file.read_text",
+                    "input": {"path": "note.md"},
+                    "reason": "read note via structured plan",
+                }
+            ]
+        },
+    )
+
+    assert result["status"] == "ok"
+    assert result["answer"] == "structured plan output"
+    assert result["agent_trace"][0]["action"] == "validate_plan"
+    assert result["steps"][0]["tool_name"] == "file.read_text"
+
+
+def test_agent_workflow_rejects_invalid_structured_plan_without_tool_run(tmp_path):
+    db = build_db_session()
+    workflow = AgentWorkflow(registry=build_default_tool_registry(base_dir=str(tmp_path)))
+
+    result = workflow.run(
+        db=db,
+        user_id="u1",
+        project_id="p1",
+        session_id="s1",
+        task="ignored when plan is supplied",
+        request_id="req-agent-plan-invalid",
+        plan_payload={
+            "steps": [
+                {
+                    "tool_name": "shell.run_safe",
+                    "input": {"command": "cat /etc/passwd"},
+                    "reason": "unsafe command",
+                }
+            ]
+        },
+    )
+
+    assert result["status"] == "error"
+    assert "command must be one of" in result["error"]
+    assert result["steps"] == []
+    assert db.query(ToolRun).count() == 0
+
+
 def test_agent_workflow_rejects_unsupported_tasks_without_tool_run(tmp_path):
     db = build_db_session()
     workflow = AgentWorkflow(registry=build_default_tool_registry(base_dir=str(tmp_path)))

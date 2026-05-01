@@ -242,6 +242,18 @@ P3-1 最小 Agent 工作流的回归重点是 Planner / Executor 不绕过 Tool 
 
 当前 Planner 只支持 `read file <path>`、`pwd` / `show cwd`、`git status` 三类确定性任务。任意 shell、删除、写文件等能力不会被规划，unsupported task 返回 `status=error` 且不写 tool run。
 
+## Structured Agent Plan
+
+P3-2 结构化计划的回归重点是外部或模型生成的 plan 必须先过 schema 校验，再进入 Executor：
+
+- `tests/test_agent_plan.py` 覆盖 `steps[{tool_name,input,reason}]` 的结构校验、未知工具拒绝、required input 校验、enum 校验、step 数量上限和未知 input 字段拒绝。
+- `tests/test_agent_workflow.py` 覆盖 `AgentWorkflow.run(..., plan_payload=...)` 的成功执行和失败拒绝。
+- `tests/test_agents_route.py` 覆盖 `POST /agents/run` 可接受显式 `plan`，同时拒绝空 `user_id/project_id` 并把空 `session_id` 归一为 `null`。
+
+结构化计划只允许调用 Tool Registry 已注册的工具。`shell.run_safe.command` 必须匹配工具 schema 中的 enum，例如 `pwd`、`ls`、`git status`；`cat /etc/passwd` 这类命令会在计划校验阶段被拒绝，且不写入 tool run。
+
+外部 plan 当前最多允许 10 个步骤，且 `input` 只能包含工具 schema 声明过的字段。这个限制用于避免单请求工具调用放大，以及避免未声明字段进入 `ToolRun.input_payload` 审计记录。
+
 ## Retrieval quality
 
 检索质量评估使用固定 golden dataset，默认 fixture 为：

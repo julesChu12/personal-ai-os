@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app.api.request_validation import normalize_optional_string, require_non_blank
 from app.core.request_context import REQUEST_ID_HEADER, get_request_id
 from app.db.database import get_db
 from app.db.models import ToolRun
@@ -37,11 +38,11 @@ def list_tool_runs(
     limit: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    _require_non_blank("user_id", user_id)
-    _require_non_blank("project_id", project_id)
+    user_id = require_non_blank("user_id", user_id)
+    project_id = require_non_blank("project_id", project_id)
     runs = (
         db.query(ToolRun)
-        .filter_by(user_id=user_id.strip(), project_id=project_id.strip())
+        .filter_by(user_id=user_id, project_id=project_id)
         .order_by(ToolRun.id.desc())
         .limit(limit)
         .all()
@@ -57,9 +58,9 @@ def invoke_tool(
     db: Session = Depends(get_db),
     registry: ToolRegistry = Depends(get_tool_registry),
 ) -> dict[str, Any]:
-    user_id = _require_non_blank("user_id", payload.user_id)
-    project_id = _require_non_blank("project_id", payload.project_id)
-    session_id = payload.session_id.strip() if payload.session_id and payload.session_id.strip() else None
+    user_id = require_non_blank("user_id", payload.user_id)
+    project_id = require_non_blank("project_id", payload.project_id)
+    session_id = normalize_optional_string(payload.session_id)
 
     try:
         result = registry.invoke(tool_name, payload.input)
@@ -77,12 +78,6 @@ def invoke_tool(
     )
 
     return {**result.to_dict(), "run_id": run.id}
-
-
-def _require_non_blank(name: str, value: str) -> str:
-    if not isinstance(value, str) or not value.strip():
-        raise HTTPException(status_code=400, detail=f"{name} must not be blank")
-    return value.strip()
 
 
 def _request_id_from_request(request: Request) -> str | None:

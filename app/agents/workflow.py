@@ -3,7 +3,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.agents.executor import AgentStepResult, ExecutorAgent
-from app.agents.planner import PlannerAgent
+from app.agents.planner import AgentPlanValidationError, PlannerAgent, validate_agent_plan
 from app.tools.audit import record_tool_run
 from app.tools.registry import ToolRegistry, build_default_tool_registry
 
@@ -31,10 +31,16 @@ class AgentWorkflow:
         session_id: str,
         task: str,
         request_id: str | None = None,
+        plan_payload: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         try:
-            plan = self.planner.plan(task)
-        except ValueError as exc:
+            if plan_payload is None:
+                plan = self.planner.plan(task)
+                trace_action = "plan"
+            else:
+                plan = validate_agent_plan(plan_payload, self.registry)
+                trace_action = "validate_plan"
+        except (AgentPlanValidationError, ValueError) as exc:
             return {
                 "status": "error",
                 "answer": "",
@@ -44,7 +50,7 @@ class AgentWorkflow:
             }
 
         trace: list[dict[str, Any]] = [
-            {"agent": "planner", "action": "plan", "plan": plan.to_dict()},
+            {"agent": "planner", "action": trace_action, "plan": plan.to_dict()},
         ]
         step_results: list[AgentStepResult] = []
 
