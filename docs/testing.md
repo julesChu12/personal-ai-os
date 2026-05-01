@@ -275,6 +275,18 @@ P3-4 Agent 结果沉淀采用显式策略，避免普通工具调用污染长期
 
 沉淀内容复用 `MemoryPipeline.persist()`，候选类型为 `agent_result`，标题格式为 `Agent result: <task>`，内容包含原始 task 和最终 answer。响应中的 `memory_saved` 表示本次成功写入或复用的记忆数量。
 
+## AgentRun audit
+
+P3-5 AgentRun 持久化用于记录一次 Agent workflow 的任务级结果，补齐 `ToolRun` 只能观察单个工具调用的问题：
+
+- 每次 `POST /agents/run` 都会写入一条 `AgentRun`，包括 planner 拒绝、工具失败和成功完成。
+- 响应中的 `agent_run_id` 对应 `agent_runs.id`，便于从 API 响应追踪到持久化记录。
+- `AgentRun` 记录 `user_id`、`project_id`、`session_id`、`task`、`status`、`error`、`answer`、`plan_payload`、`steps`、`agent_trace`、`memory_saved`、`request_id` 和 `created_at`。
+- `GET /agents/runs` 必须同时提供非空 `user_id` 和 `project_id`，按 scope 返回最近 run，不跨用户或项目泄露。
+- `tests/test_db_migrations.py` 覆盖 `agent_runs` 表和 `0003_agent_runs` revision。
+- `tests/test_agent_workflow.py` 覆盖 workflow 写入 `AgentRun` 和返回 `agent_run_id`。
+- `tests/test_agents_route.py` 覆盖 `/agents/runs` 查询、倒序排序和空 scope 拒绝。
+
 ## Retrieval quality
 
 检索质量评估使用固定 golden dataset，默认 fixture 为：
@@ -337,7 +349,7 @@ python scripts/evaluate_qdrant_retrieval_quality.py --json
 - Retrieval quality：固定记忆样本、查询样本、top-k 命中率和 JSON 评估输出。
 - Qdrant retrieval quality：把固定样本写入 Qdrant 后，通过 `VectorStore.search` 验证真实检索路径。
 - Scheduler：启动注册、生命周期托管、定时摘要任务行为。
-- Agent workflow：Planner 生成受控工具步骤、Executor 通过 Tool Registry 执行、ToolRun 审计记录、unsupported task 不执行工具、多步骤失败短路、显式 `memory_agent` 结果沉淀。
+- Agent workflow：Planner 生成受控工具步骤、Executor 通过 Tool Registry 执行、ToolRun 审计记录、AgentRun 任务级审计、unsupported task 不执行工具、多步骤失败短路、显式 `memory_agent` 结果沉淀。
 - Docker smoke：运行中 API 的健康检查、模型发现和基础检索接口。
 - End-to-end smoke：可选验证聊天写入和记忆召回闭环。
 

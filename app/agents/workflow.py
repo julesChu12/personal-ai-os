@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.agents.executor import AgentStepResult, ExecutorAgent
 from app.agents.planner import AgentPlanValidationError, PlannerAgent, validate_agent_plan
+from app.agents.run_store import record_agent_run
 from app.memory.memory_pipeline import MemoryPipeline
 from app.memory.memory_schema import MemoryCandidate
 from app.tools.audit import record_tool_run
@@ -49,7 +50,7 @@ class AgentWorkflow:
                 plan = validate_agent_plan(plan_payload, self.registry)
                 trace_action = "validate_plan"
         except (AgentPlanValidationError, ValueError) as exc:
-            return {
+            response = {
                 "status": "error",
                 "answer": "",
                 "error": str(exc),
@@ -57,6 +58,23 @@ class AgentWorkflow:
                 "steps": [],
                 "agent_trace": [{"agent": "planner", "action": "reject", "error": str(exc)}],
             }
+            run = record_agent_run(
+                db,
+                user_id=user_id,
+                project_id=project_id,
+                session_id=session_id,
+                task=task,
+                status=response["status"],
+                error=response["error"],
+                answer=response["answer"],
+                plan_payload={},
+                steps=response["steps"],
+                agent_trace=response["agent_trace"],
+                memory_saved=response["memory_saved"],
+                request_id=request_id,
+            )
+            response["agent_run_id"] = run.id
+            return response
 
         trace: list[dict[str, Any]] = [
             {"agent": "planner", "action": trace_action, "plan": plan.to_dict()},
@@ -107,7 +125,7 @@ class AgentWorkflow:
             answer=answer,
             should_persist=persist_agent_result and failed is None,
         )
-        return {
+        response = {
             "status": "error" if failed else "ok",
             "answer": answer,
             "error": failed.error if failed else None,
@@ -115,6 +133,23 @@ class AgentWorkflow:
             "steps": [step.to_dict() for step in step_results],
             "agent_trace": trace,
         }
+        run = record_agent_run(
+            db,
+            user_id=user_id,
+            project_id=project_id,
+            session_id=session_id,
+            task=task,
+            status=response["status"],
+            error=response["error"],
+            answer=response["answer"],
+            plan_payload=plan.to_dict(),
+            steps=response["steps"],
+            agent_trace=response["agent_trace"],
+            memory_saved=response["memory_saved"],
+            request_id=request_id,
+        )
+        response["agent_run_id"] = run.id
+        return response
 
 
 def _build_answer(step_results: list[AgentStepResult]) -> str:

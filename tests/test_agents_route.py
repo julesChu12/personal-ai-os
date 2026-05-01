@@ -7,7 +7,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.api import routes_agents
 from app.db.database import Base
-from app.db.models import ToolRun
+from app.db.models import AgentRun, ToolRun
 from app.tools.registry import build_default_tool_registry
 
 
@@ -247,6 +247,75 @@ def test_agents_run_endpoint_persists_result_when_memory_agent_requested(tmp_pat
     assert candidate.memory_type == "agent_result"
     assert candidate.title == "Agent result: read file note.md"
     assert "route memory output" in candidate.content
+
+
+def test_agents_run_endpoint_records_agent_run_and_lists_by_scope(tmp_path):
+    first = tmp_path / "first.md"
+    second = tmp_path / "second.md"
+    first.write_text("first route run", encoding="utf-8")
+    second.write_text("second route run", encoding="utf-8")
+    client = build_client(tmp_path)
+
+    first_response = client.post(
+        "/agents/run",
+        json={
+            "user_id": "u1",
+            "project_id": "p1",
+            "session_id": "s1",
+            "task": "read file first.md",
+            "agents": ["planner", "executor"],
+        },
+        headers={"X-Request-ID": "req-agent-run-first"},
+    )
+    second_response = client.post(
+        "/agents/run",
+        json={
+            "user_id": "u1",
+            "project_id": "p1",
+            "session_id": "s2",
+            "task": "read file second.md",
+            "agents": ["planner", "executor"],
+        },
+        headers={"X-Request-ID": "req-agent-run-second"},
+    )
+    client.post(
+        "/agents/run",
+        json={
+            "user_id": "u2",
+            "project_id": "p1",
+            "session_id": "other",
+            "task": "read file second.md",
+            "agents": ["planner", "executor"],
+        },
+    )
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 200
+    first_payload = first_response.json()
+    second_payload = second_response.json()
+    assert first_payload["agent_run_id"] >= 1
+    assert second_payload["agent_run_id"] > first_payload["agent_run_id"]
+
+    response = client.get("/agents/runs", params={"user_id": "u1", "project_id": "p1"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert [run["id"] for run in payload["runs"]] == [second_payload["agent_run_id"], first_payload["agent_run_id"]]
+    assert payload["runs"][0]["task"] == "read file second.md"
+    assert payload["runs"][0]["status"] == "ok"
+    assert payload["runs"][0]["answer"] == "second route run"
+    assert payload["runs"][0]["request_id"] == "req-agent-run-second"
+    assert payload["runs"][0]["steps"][0]["tool_name"] == "file.read_text"
+    assert all(run["user_id"] == "u1" and run["project_id"] == "p1" for run in payload["runs"])
+
+
+def test_agents_runs_endpoint_rejects_blank_scope(tmp_path):
+    client = build_client(tmp_path)
+
+    response = client.get("/agents/runs", params={"user_id": " ", "project_id": "p1"})
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "user_id must not be blank"
 
 
 def test_agents_run_endpoint_does_not_persist_result_without_memory_agent(tmp_path):

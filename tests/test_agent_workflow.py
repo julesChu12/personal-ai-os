@@ -4,7 +4,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.agents.workflow import AgentWorkflow
 from app.db.database import Base
-from app.db.models import ToolRun
+from app.db.models import AgentRun, ToolRun
 from app.tools.registry import build_default_tool_registry
 
 
@@ -55,12 +55,22 @@ def test_agent_workflow_reads_file_and_records_tool_run(tmp_path):
     assert result["agent_trace"][1]["agent"] == "executor"
     assert result["steps"][0]["tool_name"] == "file.read_text"
     assert result["steps"][0]["status"] == "ok"
+    assert result["agent_run_id"] >= 1
 
     runs = db.query(ToolRun).all()
     assert len(runs) == 1
     assert runs[0].tool_name == "file.read_text"
     assert runs[0].status == "ok"
     assert runs[0].request_id == "req-agent-1"
+
+    agent_runs = db.query(AgentRun).all()
+    assert len(agent_runs) == 1
+    assert agent_runs[0].id == result["agent_run_id"]
+    assert agent_runs[0].status == "ok"
+    assert agent_runs[0].task == "read file note.md"
+    assert agent_runs[0].answer == "agent workflow output"
+    assert agent_runs[0].steps[0]["tool_name"] == "file.read_text"
+    assert agent_runs[0].request_id == "req-agent-1"
 
 
 def test_agent_workflow_executes_valid_structured_plan(tmp_path):
@@ -164,6 +174,11 @@ def test_agent_workflow_stops_after_first_failed_step(tmp_path):
     assert result["error"] == "path is not a file"
     assert [entry["action"] for entry in result["agent_trace"]] == ["validate_plan", "execute_tool"]
     assert db.query(ToolRun).count() == 1
+    agent_run = db.query(AgentRun).one()
+    assert agent_run.id == result["agent_run_id"]
+    assert agent_run.status == "error"
+    assert agent_run.error == "path is not a file"
+    assert len(agent_run.steps) == 1
 
 
 def test_agent_workflow_stops_after_later_failed_step(tmp_path):
@@ -320,5 +335,11 @@ def test_agent_workflow_rejects_unsupported_tasks_without_tool_run(tmp_path):
     assert result["status"] == "error"
     assert "unsupported agent task" in result["error"]
     assert result["memory_saved"] == 0
+    assert result["agent_run_id"] >= 1
     assert result["steps"] == []
     assert db.query(ToolRun).count() == 0
+    agent_run = db.query(AgentRun).one()
+    assert agent_run.id == result["agent_run_id"]
+    assert agent_run.status == "error"
+    assert agent_run.error == "unsupported agent task"
+    assert agent_run.steps == []

@@ -254,6 +254,8 @@ def test_p3_agent_workflow_contract_is_documented():
     executor = read_text("app/agents/executor.py")
     workflow = read_text("app/agents/workflow.py")
     routes_agents = read_text("app/api/routes_agents.py")
+    models = read_text("app/db/models.py")
+    migration = read_text("app/db/migrations/versions/v0003_agent_runs.py")
     testing = read_text("docs/testing.md")
     roadmap = read_text("docs/development-roadmap.md")
 
@@ -265,23 +267,31 @@ def test_p3_agent_workflow_contract_is_documented():
     assert "def execute" in executor
     assert "class AgentWorkflow" in workflow
     assert "record_tool_run" in workflow
+    assert "record_agent_run" in workflow
+    assert "agent_run_id" in workflow
     assert "plan_payload" in workflow
     assert "persist_agent_result" in workflow
     assert "MemoryPipeline" in workflow
+    assert "class AgentRun" in models
+    assert "agent_runs" in migration
     assert "plan:" in routes_agents
     assert "memory_agent" in routes_agents
+    assert "@router.get(\"/agents/runs\")" in routes_agents
     assert "@router.post(\"/agents/run\")" in routes_agents
     assert "Agent workflow" in testing
     assert "Structured Agent Plan" in testing
     assert "failure short-circuit" in testing
     assert "agent_result" in testing
+    assert "AgentRun" in testing
     assert "Task P3-1" in roadmap
     assert "Task P3-2" in roadmap
     assert "Task P3-3" in roadmap
     assert "Task P3-4" in roadmap
+    assert "Task P3-5" in roadmap
     assert "Planner / Executor 最小工作流" in roadmap
     assert "多步骤 Executor 失败短路策略" in roadmap
     assert "Agent 结果按策略进入长期记忆" in roadmap
+    assert "Agent Run 持久化与查询" in roadmap
     assert "已完成基础版" in roadmap
 
 

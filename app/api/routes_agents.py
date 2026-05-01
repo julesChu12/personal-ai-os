@@ -1,13 +1,15 @@
 from typing import Any
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.request_validation import normalize_optional_string, require_non_blank
 from app.agents.workflow import AgentWorkflow
+from app.agents.run_store import serialize_agent_run
 from app.core.request_context import REQUEST_ID_HEADER, get_request_id
 from app.db.database import get_db
+from app.db.models import AgentRun
 from app.memory.memory_pipeline import MemoryPipeline
 from app.tools.registry import ToolRegistry, build_default_tool_registry
 
@@ -37,6 +39,25 @@ def agents():
         "agents": ["planner", "researcher", "coder", "executor", "memory_agent"],
         "note": "Planner / Executor workflow is available at POST /agents/run.",
     }
+
+
+@router.get("/agents/runs")
+def list_agent_runs(
+    user_id: str = Query(...),
+    project_id: str = Query(...),
+    limit: int = Query(default=20, ge=1, le=100),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    user_id = require_non_blank("user_id", user_id)
+    project_id = require_non_blank("project_id", project_id)
+    runs = (
+        db.query(AgentRun)
+        .filter_by(user_id=user_id, project_id=project_id)
+        .order_by(AgentRun.id.desc())
+        .limit(limit)
+        .all()
+    )
+    return {"runs": [serialize_agent_run(run) for run in runs]}
 
 
 @router.post("/agents/run")
