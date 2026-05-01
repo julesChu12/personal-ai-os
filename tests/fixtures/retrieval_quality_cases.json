@@ -1,0 +1,34 @@
+{
+  "top_k": 2,
+  "memories": [
+    {
+      "id": "memory-rag",
+      "content": "RAG 系统需要把长期记忆写入向量库，并在回答前检索相关上下文。"
+    },
+    {
+      "id": "memory-openwebui",
+      "content": "Open WebUI 通过 OpenAI-compatible /v1/chat/completions 接入 Personal AI OS。"
+    },
+    {
+      "id": "memory-scheduler",
+      "content": "Scheduler 会定时汇总最近会话，并把摘要沉淀为长期记忆。"
+    }
+  ],
+  "queries": [
+    {
+      "id": "query-rag",
+      "query": "如何让长期记忆参与回答？",
+      "expected_ids": ["memory-rag"]
+    },
+    {
+      "id": "query-webui",
+      "query": "Open WebUI 应该调用哪个兼容接口？",
+      "expected_ids": ["memory-openwebui"]
+    },
+    {
+      "id": "query-scheduler",
+      "query": "定时任务如何沉淀会话摘要？",
+      "expected_ids": ["memory-scheduler"]
+    }
+  ]
+}
