@@ -1,0 +1,431 @@
+# Personal AI OS Development Roadmap
+
+更新日期：2026-05-01
+
+## 当前阶段判断
+
+项目已经完成“本地可用 + Open WebUI 接入 + 长期记忆基础闭环 + P0 基础服务硬化 + P1 运行质量基础版 + P2 工具层基础版 + 开源工程化基础”的核心底座。
+
+按完整 Personal AI OS 愿景估算，整体进度约为 80%左右。按当前阶段目标“可本地长期运行、可开源协作、基础服务可信、工具调用可控可审计”估算，进度约为 98%左右。
+
+当前不优先推进 Obsidian 双向同步。原因是它会引入文件监听、增量同步、冲突处理和双向一致性，属于功能扩展；当前更应该优先把基础服务打牢。
+
+## 已完成能力
+
+| 模块 | 状态 | 功能摘要 |
+| --- | --- | --- |
+| Open WebUI 接入 | 已完成基础版 | 通过 OpenAI-compatible `/v1/models` 和 `/v1/chat/completions` 接入 Web UI |
+| 聊天持久化 | 已完成基础版 | `/chat` 和 `/v1/chat/completions` 共用消息与记忆持久化逻辑 |
+| 长期记忆写入 | 已完成基础版 | 支持 PostgreSQL、Qdrant、Obsidian 三路写入 |
+| 记忆检索 | 已完成基础版 | 支持 Qdrant 检索、用户/项目过滤、检索失败降级 |
+| Embedding provider | 已完成基础版 | 支持 `mock` 和 `openai-compatible`，并校验向量维度 |
+| 检索质量评估 | 已完成基础版 | 支持离线 golden dataset 和 Qdrant 端到端 hit-rate 评估 |
+| Scheduler | 已完成基础版 | 支持定时会话摘要任务 |
+| Diagnostics API | 已完成基础版 | `/diagnostics` 可检查配置、DB、Qdrant、embedding、model、scheduler |
+| Tool Registry | 已完成基础版 | 支持工具枚举、安全调用边界、HTTP adapter 和 tool run 审计 |
+| 开源工程化 | 已完成基础版 | Apache-2.0、CI、Makefile、smoke、CONTRIBUTING、测试文档已具备 |
+
+## 下一阶段总目标
+
+下一阶段目标是在当前可靠底座上推进最小多 Agent 编排，而不是继续横向堆功能：
+
+- Planner / Executor 能通过受控工具完成一个小任务。
+- 工具调用必须保留审计记录。
+- Agent 失败必须能通过 request id、tool run 和错误结构追踪。
+- 普通聊天、记忆写入和 OpenAI-compatible 路径不能被多 Agent 改造破坏。
+
+## P0：基础服务硬化
+
+P0 回归状态：已完成基础版，最近一次完整回归通过 `make ci`，覆盖 compile、pytest 和 migration smoke。
+
+| Task | 状态 | 回归覆盖 | 文档状态 |
+| --- | --- | --- | --- |
+| P0-1 配置校验与启动检查 | 已完成基础版 | `tests/test_config_validation.py`、项目合同测试、脚本 smoke | README、testing docs 已覆盖 |
+| P0-2 数据库迁移基础 | 已完成基础版 | `tests/test_db_migrations.py`、`migration-smoke`、项目合同测试 | README、testing docs 已覆盖 |
+| P0-3 API 错误响应标准化 | 已完成基础版 | `tests/test_errors.py`、OpenAI-compatible 回归、项目合同测试 | README、testing docs 已覆盖 |
+| P0-4 请求日志和 request id | 已完成基础版 | `tests/test_request_context.py`、生命周期回归、项目合同测试 | README、testing docs 已覆盖 |
+
+### Task P0-1：配置校验与启动检查
+
+状态：已完成基础版。
+
+功能摘要：
+新增统一配置校验模块和 CLI/script 检查入口，检查数据库、Qdrant、OpenAI-compatible key、embedding provider、模型 provider、危险默认值。
+
+执行原因：
+当前 `/diagnostics` 可以在服务运行后发现问题，但启动前还没有明确 gate。开源用户最常见的问题会是配置不完整、key 不一致、embedding 维度错误。这个任务能把问题提前暴露。
+
+主要产出：
+- `app/core/config_validation.py`
+- `scripts/check_runtime_config.py`
+- README 和 testing docs 配置检查说明
+- 单元测试覆盖默认危险配置、缺失配置、合法配置
+
+验收标准：
+- 本地默认配置返回 `degraded` 但不阻塞开发。
+- 部署模式下可检测 `OPENAI_COMPAT_API_KEY=EMPTY` 等危险配置。
+- 不输出密钥原文。
+
+依赖：
+已完成的 `settings`、`/diagnostics`、embedding 维度校验。
+
+### Task P0-2：数据库迁移基础
+
+状态：已完成基础版。
+
+功能摘要：
+引入数据库 migration 管理，替代长期依赖 `create_all` 的隐式建表方式。
+
+执行原因：
+当前表结构还简单，但后续 session、memory governance、tool runs、多 Agent 状态都会改表。如果没有 migration，开源用户升级会不可控。
+
+主要产出：
+- Alembic 或最小 migration 框架
+- 初始 schema migration
+- 本地和 Docker migration 文档
+- CI 中的 migration smoke
+
+验收标准：
+- 新环境可以通过 migration 创建当前 schema。
+- 现有 `create_all` 行为有清晰过渡策略。
+- migration 命令在 README 中可复现。
+
+依赖：
+当前 SQLAlchemy models。
+
+当前实现说明：
+已提供轻量 SQLAlchemy migration runner、初始 schema migration、`scripts/run_migrations.py` 入口、`migration-smoke` CI 目标和文档。应用启动仍保留 `create_all` 兼容路径，生产和开源协作流程应逐步切换为“先显式 migration，再启动服务”。
+
+### Task P0-3：API 错误响应标准化
+
+状态：已完成基础版。
+
+功能摘要：
+统一 API 错误结构，让 `/chat`、`/memory/*`、`/v1/*`、`/diagnostics` 的错误返回可预测。
+
+执行原因：
+现在部分错误来自 FastAPI 默认 detail，部分来自自定义字符串。Open WebUI 和开源用户排障时，需要稳定的错误结构。
+
+主要产出：
+- `app/core/errors.py`
+- FastAPI exception handlers
+- OpenAI-compatible 路由保持兼容格式
+- 回归测试覆盖 400、401、500、依赖失败
+
+验收标准：
+- 内部 API 返回统一 `{error: {code, message, type}}` 或约定结构。
+- `/v1/*` 不破坏 OpenAI-compatible 错误语义。
+- 错误响应不泄露 secret 和连接串。
+
+依赖：
+现有 API routes 和 diagnostics。
+
+当前实现说明：
+已提供 `app/core/errors.py` 和 FastAPI exception handlers。内部 API 使用 `{error: {code, message, type}}`，OpenAI-compatible `/v1/*` 保持 `{error: {message, type, code}}` 兼容格式。未捕获异常统一降级为 `internal server error`，避免响应泄露 secret 或连接串。
+
+### Task P0-4：请求日志和 request id
+
+状态：已完成基础版。
+
+功能摘要：
+增加 request id middleware，并在错误日志中带上 request id、path、method、status。
+
+执行原因：
+当前日志已经能记录部分检索和持久化错误，但跨请求排查仍然困难。request id 是服务化运行的基础。
+
+主要产出：
+- `app/core/request_context.py`
+- FastAPI middleware
+- 响应头 `X-Request-ID`
+- 日志格式文档
+
+验收标准：
+- 每个请求都有 request id。
+- 传入 `X-Request-ID` 时复用调用方 id。
+- 异常日志包含 request id。
+
+依赖：
+API 错误标准化可先可后，建议在 P0-3 之后做。
+
+当前实现说明：
+已提供 `app/core/request_context.py` 和 FastAPI middleware。服务会复用调用方传入的 `X-Request-ID`，缺失时生成 UUID，并在响应头返回。请求完成日志包含 `request_id, path, method, status, duration_ms`；未捕获异常日志包含 `request_id, path, method, status, exception_type`，且不记录异常原文。
+
+## P1：数据一致性与运行质量
+
+P1 回归状态：已完成基础版并完成 review 修复，最近一次完整回归通过 `make ci`，覆盖 session identity、memory governance、provider reliability 和服务级 smoke 合同。
+
+| Task | 状态 | 回归覆盖 | 文档状态 |
+| --- | --- | --- | --- |
+| P1-1 Session / Project 语义收紧 | 已完成基础版 | `tests/test_session_identity.py`、`tests/test_sessions_route.py`、OpenAI-compatible 回归 | README、testing docs 已覆盖 |
+| P1-2 记忆治理 v2 | 已完成基础版 | `tests/test_memory_pipeline.py`、项目合同测试 | README、testing docs 已覆盖 |
+| P1-3 Provider 可靠性治理 | 已完成基础版 | `tests/test_provider_reliability.py`、embedding provider 回归、diagnostics 回归 | README、testing docs 已覆盖 |
+| P1-4 服务级集成测试增强 | 已完成基础版 | `scripts/smoke_api.sh` 合同测试、CI Docker smoke 配置 | README、testing docs 已覆盖 |
+
+### Task P1-1：Session / Project 语义收紧
+
+状态：已完成基础版。
+
+功能摘要：
+明确 session、project、user 的来源、默认值、持久化规则和查询规则，避免记忆混项目。
+
+执行原因：
+后端已支持 OpenAI-compatible `metadata.user_id/project_id/session_id`，但还需要把语义固化成服务合同。
+
+主要产出：
+- session identity helper
+- `/sessions` 查询规则补强
+- Open WebUI metadata 使用说明
+- 回归测试覆盖默认值和 metadata 覆盖
+
+验收标准：
+- 同一用户不同项目的消息和记忆不串。
+- OpenWebUI 缺 metadata 时仍保持兼容。
+- 文档明确推荐 metadata 传参方式。
+
+依赖：
+当前 `/v1/chat/completions` metadata 支持。
+
+当前实现说明：
+已提供 `app/core/session_identity.py`，统一 OpenAI-compatible 身份解析和 `/sessions` 项目 scope 校验。`metadata.user_id/project_id/session_id` 会 trim，空值视为缺失；`X-Session-Id` 优先于 metadata session；OpenWebUI 缺 metadata 时仍使用 `openwebui` 默认值。`/sessions` 会拒绝空 `user_id` 或 `project_id`，避免跨项目查询。
+
+### Task P1-2：记忆治理 v2
+
+状态：已完成基础版。
+
+功能摘要：
+从“精确重复跳过”升级为更实用的记忆治理：同类型同标题更新、重要度策略、记忆类型策略、摘要去噪。
+
+执行原因：
+现在只跳过完全相同内容。长期使用后，类似但不完全相同的记忆会膨胀，影响检索质量。
+
+主要产出：
+- memory identity / fingerprint
+- update-or-create 策略
+- memory_type 策略
+- 回归测试覆盖重复、更新、新增
+
+验收标准：
+- 完全重复不重复写。
+- 同一语义的会话摘要可更新或合并。
+- Qdrant point id 与 DB row 保持一致可追踪。
+
+依赖：
+当前 `MemoryPipeline.persist()` 去重逻辑。
+
+当前实现说明：
+已提供 `app/memory/memory_identity.py`，记忆身份定义为 `user_id + project_id + memory_type + title`，其中 `memory_type` 会 trim 并转小写，`title` 会 trim。`MemoryPipeline.persist()` 已升级为 update-or-create：完全重复内容跳过；同身份内容变化时复用原 `qdrant_point_id` upsert 向量，成功后再更新现有 DB row 和 Obsidian 路径；已有记忆更新时如果向量 upsert 失败，会保留原 DB row 和原 point id；不同用户或不同项目不会互相更新。
+
+### Task P1-3：Provider 可靠性治理
+
+状态：已完成基础版。
+
+功能摘要：
+为 model provider 和 embedding provider 增加 timeout、retry、错误分类和诊断信息。
+
+执行原因：
+真实 provider 会遇到超时、限流、网络错误、配置错误。当前抽象已经有了，但可靠性策略还比较薄。
+
+主要产出：
+- provider error types
+- timeout/retry 配置
+- diagnostics 中展示 provider 状态
+- 回归测试覆盖配置错误、请求失败、维度错误
+
+验收标准：
+- embedding 失败能被诊断和日志识别。
+- model 失败返回可理解错误。
+- 不把检索失败升级成聊天硬失败，除非模型本身不可用。
+
+依赖：
+Diagnostics API、embedding provider、ModelRouter。
+
+当前实现说明：
+已提供 `app/core/provider_errors.py`，定义 `ProviderRequestError`、`ProviderTimeoutError` 和 `ProviderConfigurationError`。OpenAI-compatible model provider 和 embedding provider 已接入 `PROVIDER_TIMEOUT_SECONDS`、`PROVIDER_RETRY_ATTEMPTS`，并通过项目级 `retry_provider_call` 包装请求失败，SDK 内部 retry 设为 0，避免重试放大。MiniMax stream 会在读取 SSE 前检查 HTTP 状态并包装失败，避免错误消息泄露 API key。`/diagnostics` 会展示 provider timeout/retry 配置。
+
+### Task P1-4：服务级集成测试增强
+
+状态：已完成基础版。
+
+功能摘要：
+把当前 smoke 脚本升级为更完整的服务级回归，包括 chat、memory ingest、memory search、diagnostics、OpenAI-compatible auth。
+
+执行原因：
+现在 unit tests 很多，smoke 也有，但服务级覆盖还可以更系统。开源项目需要一键证明“这套服务真的可用”。
+
+主要产出：
+- `scripts/smoke_api.sh` 增强
+- 可选 `tests/integration/`
+- CI smoke job 增强
+- Docker 运行说明
+
+验收标准：
+- Docker 栈启动后，一个命令验证核心 API。
+- smoke 不依赖真实模型 key。
+- 失败时输出足够排障信息。
+
+依赖：
+现有 smoke、diagnostics、Qdrant quality evaluator。
+
+当前实现说明：
+`scripts/smoke_api.sh` 已覆盖 `/health`、`/diagnostics`、OpenAI-compatible `/v1/models` 正向鉴权、错误 key 负向鉴权、`/memory/ingest`、`/memory/search`，并保留 `SMOKE_RUN_CHAT=1` 的聊天写入与记忆召回闭环。脚本不依赖真实模型 key，可使用 mock provider 完成服务级回归。
+
+## P2：工具层前置
+
+P2 回归状态：已完成基础版，最近一次完整回归通过 `make ci`，覆盖 Tool Registry、HTTP tool adapter、tool run audit、DB migration 和项目合同测试。
+
+| Task | 状态 | 回归覆盖 | 文档状态 |
+| --- | --- | --- | --- |
+| P2-1 Tool Registry | 已完成基础版 | `tests/test_tool_registry.py`、项目合同测试 | README、testing docs 已覆盖 |
+| P2-2 MCP / Tool Adapter | 已完成基础版 | `tests/test_tools_route.py`、项目合同测试 | README、testing docs 已覆盖 |
+| P2-3 Tool Run 审计 | 已完成基础版 | `tests/test_tools_route.py`、`tests/test_db_migrations.py`、项目合同测试 | README、testing docs 已覆盖 |
+
+### Task P2-1：Tool Registry
+
+状态：已完成基础版。
+
+功能摘要：
+定义统一 tool registry，把 file、shell、git 等工具纳入可控接口。
+
+执行原因：
+多 Agent 真正有价值的前提是能调用工具。先做工具层，后做 Agent 编排，风险更低。
+
+主要产出：
+- `app/tools/registry.py`
+- tool schema
+- 权限边界
+- 单元测试
+
+验收标准：
+- 工具可以被枚举。
+- 工具调用输入输出结构稳定。
+- 危险工具默认不可随意执行。
+
+依赖：
+API 错误标准化、request id、基础安全策略。
+
+当前实现说明：
+已提供 `app/tools/registry.py`，定义 `ToolRegistry`、`ToolDefinition` 和 `ToolInvocationResult`。默认注册 `file.read_text`、`git.status`、`shell.run_safe`：文件读取限制在允许工作目录内，shell 只允许 `pwd`、`ls`、`git status`，未知工具会显式拒绝。
+
+### Task P2-2：MCP / Tool Adapter
+
+状态：已完成基础版。
+
+功能摘要：
+把内部 tool registry 暴露为 MCP 或兼容适配层。
+
+执行原因：
+这是连接外部工具生态的关键，但必须建立在稳定 tool registry 上。
+
+主要产出：
+- MCP adapter 或 tool API
+- 工具调用文档
+- 最小可运行 demo
+
+验收标准：
+- 至少一个工具可通过 adapter 调用。
+- 权限和错误可控。
+
+依赖：
+Tool Registry。
+
+当前实现说明：
+已提供 `app/api/routes_tools.py`，以 HTTP adapter 形式暴露 `GET /tools`、`POST /tools/{tool_name}/invoke` 和 `GET /tools/runs`。当前先不实现完整 MCP server，避免协议层过早复杂化；后续 MCP adapter 应复用同一个 registry 和 tool run 审计模型。
+
+### Task P2-3：Tool Run 审计
+
+状态：已完成基础版。
+
+功能摘要：
+为每次工具调用记录用户、项目、会话、工具名、输入、输出、错误、request id 和时间，形成 Agent 编排前的可追踪底座。
+
+执行原因：
+多 Agent 能力如果没有工具审计，失败后很难判断是模型规划、工具输入、权限边界还是外部命令出错。先把 tool run 记录打牢，可以降低后续 Planner / Executor 的排障成本。
+
+主要产出：
+- `ToolRun` DB model
+- `0002_tool_runs` migration
+- `/tools/runs` 查询接口
+- 成功和失败工具调用的审计回归测试
+
+验收标准：
+- 成功工具调用会记录 `status=ok`、输入、输出和 request id。
+- 失败工具调用会记录 `status=error` 和错误原因。
+- 查询工具记录必须按 `user_id + project_id` scope 过滤。
+
+依赖：
+Tool Registry、request id、数据库迁移基础。
+
+当前实现说明：
+已提供 `app/db/models.py` 中的 `ToolRun`、`app/db/migrations/versions/v0002_tool_runs.py` 和 `/tools/runs` 查询接口。`POST /tools/{tool_name}/invoke` 会在同步返回工具结果的同时写入审计记录。
+
+## P3：真正多 Agent 编排
+
+### Task P3-1：Planner / Executor 最小工作流
+
+功能摘要：
+实现最小多 Agent 工作流：Planner 拆任务，Executor 执行，Memory 记录结果。
+
+执行原因：
+多 Agent 是项目愿景核心，但需要在检索、工具、诊断、错误处理稳定后再做。
+
+主要产出：
+- agent workflow
+- 状态记录
+- 错误恢复
+- 回归测试
+
+验收标准：
+- 一个任务能被拆解、执行、记录。
+- 失败可追踪。
+- 不破坏普通聊天路径。
+
+依赖：
+Tool Registry、memory governance、request id。
+
+## 暂缓任务
+
+### Obsidian 单向导入 / 双向同步
+
+暂缓原因：
+当前 Obsidian 已经能作为写入目标。导入和双向同步会引入文件 hash、mtime、冲突处理、删除策略和重复治理，应该在基础服务硬化后单独做 spec。
+
+建议触发条件：
+- 记忆治理 v2 完成。
+- DB migration 完成。
+- 用户明确需要把已有 vault 作为主要知识源。
+
+## 推荐执行顺序
+
+1. P0-1 配置校验与启动检查
+2. P0-2 数据库迁移基础
+3. P0-3 API 错误响应标准化
+4. P0-4 请求日志和 request id
+5. P1-1 Session / Project 语义收紧
+6. P1-2 记忆治理 v2
+7. P1-3 Provider 可靠性治理
+8. P1-4 服务级集成测试增强
+9. P2-1 Tool Registry
+10. P2-2 MCP / Tool Adapter
+11. P2-3 Tool Run 审计
+12. P3-1 最小多 Agent 工作流
+
+## 每次任务完成必须验证
+
+每个 task 完成后至少运行：
+
+```bash
+make ci PYTHON="/Users/yt/Documents/myself/personal-ai-os/.venv311/bin/python"
+```
+
+涉及 Docker 服务的 task 还需要运行：
+
+```bash
+bash scripts/smoke_api.sh
+```
+
+涉及记忆检索的 task 还需要运行：
+
+```bash
+DATABASE_URL="sqlite:///:memory:" EMBEDDING_PROVIDER=mock python scripts/evaluate_retrieval_quality.py
+DATABASE_URL="sqlite:///:memory:" QDRANT_URL="http://127.0.0.1:6333" QDRANT_COLLECTION="personal_ai_os_quality_eval" EMBEDDING_PROVIDER=mock python scripts/evaluate_qdrant_retrieval_quality.py
+```
