@@ -313,6 +313,7 @@ Open WebUI 或其他兼容客户端调用 `/v1/chat/completions` 时，可以通
 
 ## Roadmap
 
+- [x] Planner / Executor 最小 Agent 工作流
 - [ ] LangGraph 真正多 Agent 工作流
 - [x] Open WebUI function/tool 接入基础：Tool Registry + HTTP adapter
 - [x] MCP tool layer 基础：统一 registry 和 tool run 审计

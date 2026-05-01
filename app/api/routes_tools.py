@@ -1,4 +1,3 @@
-import json
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -8,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.core.request_context import REQUEST_ID_HEADER, get_request_id
 from app.db.database import get_db
 from app.db.models import ToolRun
+from app.tools.audit import record_tool_run
 from app.tools.registry import ToolNotFoundError, ToolRegistry, build_default_tool_registry
 
 
@@ -66,19 +66,15 @@ def invoke_tool(
     except ToolNotFoundError as exc:
         raise HTTPException(status_code=404, detail=f"tool not found: {tool_name}") from exc
 
-    run = ToolRun(
+    run = record_tool_run(
+        db,
         user_id=user_id,
         project_id=project_id,
         session_id=session_id,
-        tool_name=result.tool_name,
-        status=result.status,
+        result=result,
         input_payload=payload.input,
-        output=_serialize_output(result.output),
-        error=result.error,
         request_id=_request_id_from_request(request),
     )
-    db.add(run)
-    db.commit()
 
     return {**result.to_dict(), "run_id": run.id}
 
@@ -87,14 +83,6 @@ def _require_non_blank(name: str, value: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise HTTPException(status_code=400, detail=f"{name} must not be blank")
     return value.strip()
-
-
-def _serialize_output(output: Any) -> str | None:
-    if output is None:
-        return None
-    if isinstance(output, str):
-        return output
-    return json.dumps(output, ensure_ascii=False, default=str)
 
 
 def _request_id_from_request(request: Request) -> str | None:

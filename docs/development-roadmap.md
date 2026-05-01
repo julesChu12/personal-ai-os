@@ -4,9 +4,9 @@
 
 ## 当前阶段判断
 
-项目已经完成“本地可用 + Open WebUI 接入 + 长期记忆基础闭环 + P0 基础服务硬化 + P1 运行质量基础版 + P2 工具层基础版 + 开源工程化基础”的核心底座。
+项目已经完成“本地可用 + Open WebUI 接入 + 长期记忆基础闭环 + P0 基础服务硬化 + P1 运行质量基础版 + P2 工具层基础版 + P3 最小 Agent 工作流 + 开源工程化基础”的核心底座。
 
-按完整 Personal AI OS 愿景估算，整体进度约为 80%左右。按当前阶段目标“可本地长期运行、可开源协作、基础服务可信、工具调用可控可审计”估算，进度约为 98%左右。
+按完整 Personal AI OS 愿景估算，整体进度约为 85%左右。按当前阶段目标“可本地长期运行、可开源协作、基础服务可信、工具调用可控可审计、最小 Agent 闭环可验证”估算，进度约为 99%左右。
 
 当前不优先推进 Obsidian 双向同步。原因是它会引入文件监听、增量同步、冲突处理和双向一致性，属于功能扩展；当前更应该优先把基础服务打牢。
 
@@ -23,16 +23,17 @@
 | Scheduler | 已完成基础版 | 支持定时会话摘要任务 |
 | Diagnostics API | 已完成基础版 | `/diagnostics` 可检查配置、DB、Qdrant、embedding、model、scheduler |
 | Tool Registry | 已完成基础版 | 支持工具枚举、安全调用边界、HTTP adapter 和 tool run 审计 |
+| Agent Workflow | 已完成基础版 | 支持 Planner / Executor 最小闭环，工具调用走 Tool Registry 并写入 ToolRun |
 | 开源工程化 | 已完成基础版 | Apache-2.0、CI、Makefile、smoke、CONTRIBUTING、测试文档已具备 |
 
 ## 下一阶段总目标
 
-下一阶段目标是在当前可靠底座上推进最小多 Agent 编排，而不是继续横向堆功能：
+下一阶段目标是在当前最小 Agent 闭环上增强任务能力，而不是继续横向堆功能：
 
-- Planner / Executor 能通过受控工具完成一个小任务。
-- 工具调用必须保留审计记录。
-- Agent 失败必须能通过 request id、tool run 和错误结构追踪。
-- 普通聊天、记忆写入和 OpenAI-compatible 路径不能被多 Agent 改造破坏。
+- Planner 支持更明确的任务 DSL 或结构化计划输入。
+- Executor 支持多步骤执行和失败短路策略。
+- Agent 结果可以按策略进入长期记忆。
+- 普通聊天、记忆写入和 OpenAI-compatible 路径继续不能被多 Agent 改造破坏。
 
 ## P0：基础服务硬化
 
@@ -360,18 +361,28 @@ Tool Registry、request id、数据库迁移基础。
 
 ## P3：真正多 Agent 编排
 
+P3 回归状态：P3-1 已完成基础版，最近一次完整回归通过 `make ci`，覆盖 Planner / Executor workflow、Agent API、ToolRun 审计和项目合同测试。
+
+| Task | 状态 | 回归覆盖 | 文档状态 |
+| --- | --- | --- | --- |
+| P3-1 Planner / Executor 最小工作流 | 已完成基础版 | `tests/test_agent_workflow.py`、`tests/test_agents_route.py`、项目合同测试 | README、testing docs 已覆盖 |
+
 ### Task P3-1：Planner / Executor 最小工作流
 
+状态：已完成基础版。
+
 功能摘要：
-实现最小多 Agent 工作流：Planner 拆任务，Executor 执行，Memory 记录结果。
+实现最小多 Agent 工作流：Planner 拆任务，Executor 通过 Tool Registry 执行，并用 ToolRun 记录结果。
 
 执行原因：
 多 Agent 是项目愿景核心，但需要在检索、工具、诊断、错误处理稳定后再做。
 
 主要产出：
-- agent workflow
-- 状态记录
-- 错误恢复
+- `app/agents/workflow.py`
+- Planner 受控任务规划
+- Executor 工具执行
+- ToolRun 审计复用
+- `/agents/run` API
 - 回归测试
 
 验收标准：
@@ -381,6 +392,9 @@ Tool Registry、request id、数据库迁移基础。
 
 依赖：
 Tool Registry、memory governance、request id。
+
+当前实现说明：
+已提供 `AgentWorkflow`、`PlannerAgent.plan()` 和 `ExecutorAgent.execute()`。当前 Planner 仅支持 `read file <path>`、`pwd` / `show cwd`、`git status` 三类确定性任务；unsupported task 返回 `status=error`，不会执行工具或写入 tool run。`POST /agents/run` 会执行最小工作流，并复用 Tool Registry 和 ToolRun 审计。
 
 ## 暂缓任务
 

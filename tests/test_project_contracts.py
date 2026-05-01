@@ -249,6 +249,27 @@ def test_p2_tool_layer_contract_is_documented():
     assert "已完成基础版" in roadmap
 
 
+def test_p3_agent_workflow_contract_is_documented():
+    planner = read_text("app/agents/planner.py")
+    executor = read_text("app/agents/executor.py")
+    workflow = read_text("app/agents/workflow.py")
+    routes_agents = read_text("app/api/routes_agents.py")
+    testing = read_text("docs/testing.md")
+    roadmap = read_text("docs/development-roadmap.md")
+
+    assert "class AgentStep" in planner
+    assert "def plan" in planner
+    assert "class ExecutorAgent" in executor
+    assert "def execute" in executor
+    assert "class AgentWorkflow" in workflow
+    assert "record_tool_run" in workflow
+    assert "@router.post(\"/agents/run\")" in routes_agents
+    assert "Agent workflow" in testing
+    assert "Task P3-1" in roadmap
+    assert "Planner / Executor 最小工作流" in roadmap
+    assert "已完成基础版" in roadmap
+
+
 def test_retrieval_quality_evaluation_contract_is_documented():
     script = read_text("scripts/evaluate_retrieval_quality.py")
     testing = read_text("docs/testing.md")
