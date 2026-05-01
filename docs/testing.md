@@ -254,6 +254,15 @@ P3-2 结构化计划的回归重点是外部或模型生成的 plan 必须先过
 
 外部 plan 当前最多允许 10 个步骤，且 `input` 只能包含工具 schema 声明过的字段。这个限制用于避免单请求工具调用放大，以及避免未声明字段进入 `ToolRun.input_payload` 审计记录。
 
+## Executor failure short-circuit
+
+P3-3 多步骤执行的回归重点是 failure short-circuit：顺序执行的 plan 一旦某个 step 返回 `status=error`，Executor workflow 必须停止后续步骤，避免错误放大或产生不必要副作用。
+
+- `tests/test_agent_workflow.py` 覆盖多步骤全部成功、第一步失败短路、后续步骤失败短路。
+- `tests/test_agents_route.py` 覆盖 `POST /agents/run` 入口在显式多步骤 plan 中继承同一短路合同。
+
+失败步骤仍会写入 `ToolRun`，用于审计具体失败原因；被短路跳过的后续步骤不会执行，也不会写入 `ToolRun`。响应保持 `status=error`，`error` 使用第一个失败步骤的错误原因，`steps` 只包含已经实际执行的步骤。
+
 ## Retrieval quality
 
 检索质量评估使用固定 golden dataset，默认 fixture 为：
@@ -316,7 +325,7 @@ python scripts/evaluate_qdrant_retrieval_quality.py --json
 - Retrieval quality：固定记忆样本、查询样本、top-k 命中率和 JSON 评估输出。
 - Qdrant retrieval quality：把固定样本写入 Qdrant 后，通过 `VectorStore.search` 验证真实检索路径。
 - Scheduler：启动注册、生命周期托管、定时摘要任务行为。
-- Agent workflow：Planner 生成受控工具步骤、Executor 通过 Tool Registry 执行、ToolRun 审计记录、unsupported task 不执行工具。
+- Agent workflow：Planner 生成受控工具步骤、Executor 通过 Tool Registry 执行、ToolRun 审计记录、unsupported task 不执行工具、多步骤失败短路。
 - Docker smoke：运行中 API 的健康检查、模型发现和基础检索接口。
 - End-to-end smoke：可选验证聊天写入和记忆召回闭环。
 

@@ -1,10 +1,10 @@
 # Personal AI OS Development Roadmap
 
-更新日期：2026-05-01
+更新日期：2026-05-02
 
 ## 当前阶段判断
 
-项目已经完成“本地可用 + Open WebUI 接入 + 长期记忆基础闭环 + P0 基础服务硬化 + P1 运行质量基础版 + P2 工具层基础版 + P3 最小 Agent 工作流 + 开源工程化基础”的核心底座。
+项目已经完成“本地可用 + Open WebUI 接入 + 长期记忆基础闭环 + P0 基础服务硬化 + P1 运行质量基础版 + P2 工具层基础版 + P3 多步骤 Agent 执行基础 + 开源工程化基础”的核心底座。
 
 按完整 Personal AI OS 愿景估算，整体进度约为 85%左右。按当前阶段目标“可本地长期运行、可开源协作、基础服务可信、工具调用可控可审计、最小 Agent 闭环可验证”估算，进度约为 99%左右。
 
@@ -361,12 +361,13 @@ Tool Registry、request id、数据库迁移基础。
 
 ## P3：真正多 Agent 编排
 
-P3 回归状态：P3-1 和 P3-2 已完成基础版，最近一次完整回归通过 `make ci`，覆盖 Planner / Executor workflow、Structured Agent Plan、Agent API、ToolRun 审计和项目合同测试。
+P3 回归状态：P3-1、P3-2 和 P3-3 已完成基础版，最近一次完整回归通过 `make ci`，覆盖 Planner / Executor workflow、Structured Agent Plan、多步骤 failure short-circuit、Agent API、ToolRun 审计和项目合同测试。
 
 | Task | 状态 | 回归覆盖 | 文档状态 |
 | --- | --- | --- | --- |
 | P3-1 Planner / Executor 最小工作流 | 已完成基础版 | `tests/test_agent_workflow.py`、`tests/test_agents_route.py`、项目合同测试 | README、testing docs 已覆盖 |
 | P3-2 Structured Agent Plan | 已完成基础版 | `tests/test_agent_plan.py`、`tests/test_agent_workflow.py`、`tests/test_agents_route.py`、项目合同测试 | README、testing docs 已覆盖 |
+| P3-3 多步骤 Executor 失败短路策略 | 已完成基础版 | `tests/test_agent_workflow.py`、`tests/test_agents_route.py`、项目合同测试 | testing docs 已覆盖 |
 
 ### Task P3-1：Planner / Executor 最小工作流
 
@@ -430,6 +431,36 @@ Tool Registry、P3-1 AgentWorkflow。
 当前实现说明：
 已提供 `validate_agent_plan(raw_plan, registry)`，基于 Tool Registry 的 `ToolDefinition.input_schema` 做最小 JSON-schema 风格校验。外部 plan 最多 10 个步骤，未知 input 字段默认拒绝，避免单请求工具调用和审计 payload 放大。`AgentWorkflow.run(..., plan_payload=...)` 会优先校验外部 plan；校验失败返回 `status=error` 并跳过工具执行。
 
+### Task P3-3：多步骤 Executor 失败短路策略
+
+状态：已完成基础版。
+
+功能摘要：
+为结构化多步骤 plan 补齐顺序执行语义：步骤按顺序执行，任一步失败后立即停止，不再执行后续步骤。
+
+执行原因：
+P3-2 已经允许外部 plan 提交最多 10 个步骤。如果失败后继续执行，后续工具可能基于错误前提运行；未来加入写文件、网络或记忆写入工具后，会放大副作用风险。先把 fail-fast 合同固定下来，可以让后续扩展工具和 Agent 编排更安全。
+
+主要产出：
+- `AgentWorkflow` failure short-circuit
+- 多步骤成功回归测试
+- 首步失败短路回归测试
+- 后续步骤失败短路回归测试
+- `/agents/run` API 多步骤短路回归测试
+
+验收标准：
+- 多步骤全部成功时按顺序返回所有已执行步骤和聚合输出。
+- 任一步失败时返回 `status=error`。
+- 失败步骤会写入 `ToolRun`，保留失败原因。
+- 失败后的后续步骤不执行，也不写入 `ToolRun`。
+- 响应中的 `steps` 只包含实际执行过的步骤。
+
+依赖：
+P3-2 Structured Agent Plan、Tool Registry、ToolRun 审计。
+
+当前实现说明：
+`AgentWorkflow.run()` 在每个工具步骤执行并记录审计后检查结果状态；当 `ToolInvocationResult.status != "ok"` 时立即停止循环。响应继续使用第一个失败步骤作为 `error` 来源，`agent_trace` 只记录实际发生的 planner/validator 和 executor 动作。
+
 ## 暂缓任务
 
 ### Obsidian 单向导入 / 双向同步
@@ -457,6 +488,7 @@ Tool Registry、P3-1 AgentWorkflow。
 11. P2-3 Tool Run 审计
 12. P3-1 最小多 Agent 工作流
 13. P3-2 Structured Agent Plan
+14. P3-3 多步骤 Executor 失败短路策略
 
 ## 每次任务完成必须验证
 

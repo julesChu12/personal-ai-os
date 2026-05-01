@@ -77,6 +77,121 @@ def test_agent_workflow_executes_valid_structured_plan(tmp_path):
     assert result["steps"][0]["tool_name"] == "file.read_text"
 
 
+def test_agent_workflow_executes_multi_step_structured_plan(tmp_path):
+    first = tmp_path / "first.md"
+    second = tmp_path / "second.md"
+    first.write_text("first output", encoding="utf-8")
+    second.write_text("second output", encoding="utf-8")
+    db = build_db_session()
+    workflow = AgentWorkflow(registry=build_default_tool_registry(base_dir=str(tmp_path)))
+
+    result = workflow.run(
+        db=db,
+        user_id="u1",
+        project_id="p1",
+        session_id="s1",
+        task="ignored when plan is supplied",
+        request_id="req-agent-plan-multi",
+        plan_payload={
+            "steps": [
+                {
+                    "tool_name": "file.read_text",
+                    "input": {"path": "first.md"},
+                    "reason": "read first note",
+                },
+                {
+                    "tool_name": "file.read_text",
+                    "input": {"path": "second.md"},
+                    "reason": "read second note",
+                },
+            ]
+        },
+    )
+
+    assert result["status"] == "ok"
+    assert result["answer"] == "first output\nsecond output"
+    assert [step["status"] for step in result["steps"]] == ["ok", "ok"]
+    assert db.query(ToolRun).count() == 2
+
+
+def test_agent_workflow_stops_after_first_failed_step(tmp_path):
+    db = build_db_session()
+    workflow = AgentWorkflow(registry=build_default_tool_registry(base_dir=str(tmp_path)))
+
+    result = workflow.run(
+        db=db,
+        user_id="u1",
+        project_id="p1",
+        session_id="s1",
+        task="ignored when plan is supplied",
+        request_id="req-agent-plan-stop-first",
+        plan_payload={
+            "steps": [
+                {
+                    "tool_name": "file.read_text",
+                    "input": {"path": "missing.md"},
+                    "reason": "read missing note",
+                },
+                {
+                    "tool_name": "shell.run_safe",
+                    "input": {"command": "pwd"},
+                    "reason": "show cwd after failure",
+                },
+            ]
+        },
+    )
+
+    assert result["status"] == "error"
+    assert len(result["steps"]) == 1
+    assert result["steps"][0]["tool_name"] == "file.read_text"
+    assert result["steps"][0]["status"] == "error"
+    assert result["error"] == "path is not a file"
+    assert [entry["action"] for entry in result["agent_trace"]] == ["validate_plan", "execute_tool"]
+    assert db.query(ToolRun).count() == 1
+
+
+def test_agent_workflow_stops_after_later_failed_step(tmp_path):
+    first = tmp_path / "first.md"
+    first.write_text("first output", encoding="utf-8")
+    db = build_db_session()
+    workflow = AgentWorkflow(registry=build_default_tool_registry(base_dir=str(tmp_path)))
+
+    result = workflow.run(
+        db=db,
+        user_id="u1",
+        project_id="p1",
+        session_id="s1",
+        task="ignored when plan is supplied",
+        request_id="req-agent-plan-stop-later",
+        plan_payload={
+            "steps": [
+                {
+                    "tool_name": "file.read_text",
+                    "input": {"path": "first.md"},
+                    "reason": "read first note",
+                },
+                {
+                    "tool_name": "file.read_text",
+                    "input": {"path": "missing.md"},
+                    "reason": "read missing note",
+                },
+                {
+                    "tool_name": "shell.run_safe",
+                    "input": {"command": "pwd"},
+                    "reason": "show cwd after failure",
+                },
+            ]
+        },
+    )
+
+    assert result["status"] == "error"
+    assert len(result["steps"]) == 2
+    assert [step["status"] for step in result["steps"]] == ["ok", "error"]
+    assert result["steps"][1]["tool_name"] == "file.read_text"
+    assert result["error"] == "path is not a file"
+    assert db.query(ToolRun).count() == 2
+
+
 def test_agent_workflow_rejects_invalid_structured_plan_without_tool_run(tmp_path):
     db = build_db_session()
     workflow = AgentWorkflow(registry=build_default_tool_registry(base_dir=str(tmp_path)))

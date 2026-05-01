@@ -157,6 +157,50 @@ def test_agents_run_endpoint_normalizes_blank_session_id(tmp_path):
         db.close()
 
 
+def test_agents_run_endpoint_stops_after_failed_plan_step(tmp_path):
+    client = build_client(tmp_path)
+
+    response = client.post(
+        "/agents/run",
+        json={
+            "user_id": "u1",
+            "project_id": "p1",
+            "session_id": "s1",
+            "task": "ignored when plan is supplied",
+            "agents": ["planner", "executor"],
+            "plan": {
+                "steps": [
+                    {
+                        "tool_name": "file.read_text",
+                        "input": {"path": "missing.md"},
+                        "reason": "read missing note",
+                    },
+                    {
+                        "tool_name": "shell.run_safe",
+                        "input": {"command": "pwd"},
+                        "reason": "show cwd after failure",
+                    },
+                ]
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "error"
+    assert len(payload["steps"]) == 1
+    assert payload["steps"][0]["tool_name"] == "file.read_text"
+    assert payload["error"] == "path is not a file"
+
+    db = client.app.state.testing_session()
+    try:
+        runs = db.query(ToolRun).all()
+        assert len(runs) == 1
+        assert runs[0].tool_name == "file.read_text"
+    finally:
+        db.close()
+
+
 def test_agents_run_endpoint_returns_error_for_unsupported_task(tmp_path):
     client = build_client(tmp_path)
 

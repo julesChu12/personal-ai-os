@@ -28,7 +28,7 @@ class AgentWorkflow:
         db: Session,
         user_id: str,
         project_id: str,
-        session_id: str,
+        session_id: str | None,
         task: str,
         request_id: str | None = None,
         plan_payload: dict[str, Any] | None = None,
@@ -83,6 +83,8 @@ class AgentWorkflow:
                     "run_id": run.id,
                 }
             )
+            if result.status != "ok":
+                break
 
         failed = next((step for step in step_results if step.status != "ok"), None)
         answer = _build_answer(step_results)
