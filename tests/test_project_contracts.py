@@ -25,7 +25,7 @@ def test_github_actions_runs_the_same_ci_entrypoint():
     assert "python-version: \"3.11\"" in workflow
     assert "python -m pip install -e ." in workflow
     assert "make ci PYTHON=python" in workflow
-    assert "DATABASE_URL: sqlite:///:memory:" in workflow
+    assert 'DATABASE_URL: "sqlite:///:memory:"' in workflow
 
 
 def test_runtime_config_files_document_embedding_provider_contract():
