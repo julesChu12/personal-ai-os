@@ -8,12 +8,12 @@
 - Secrets: 运行密钥通过环境变量配置，`.env` 被 `.gitignore` 排除。
 - Runtime data: 本地数据库、向量库、Obsidian 数据和缓存目录被 `.gitignore` 排除。
 - Embedding validation: `scripts/check_embedding_provider.py` 可验证当前 embedding provider 和向量维度配置。
+- Security policy: 已提供根目录 `SECURITY.md`，明确漏洞报告和 secret 处理原则。
+- Code of conduct: 已提供根目录 `CODE_OF_CONDUCT.md`，明确贡献沟通边界。
+- Repository URLs: `pyproject.toml` 已配置 GitHub homepage、repository 和 issues URL。
 
 ## 未决
 
-- Repository URLs: 确认正式 GitHub 仓库地址后，再补 `pyproject.toml` 的 `[project.urls]`。
-- Security policy: 开源发布前决定是否新增 `SECURITY.md`。
-- Code of conduct: 开源发布前决定是否新增 `CODE_OF_CONDUCT.md`。
 - Obsidian sync: 当前支持写入 Obsidian，文件监听、增量同步和冲突处理仍需独立 spec。
 
 ## 发布前检查

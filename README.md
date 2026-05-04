@@ -159,7 +159,7 @@ SMOKE_RUN_CHAT=1 bash scripts/smoke_api.sh
 
 项目使用 Apache-2.0 许可证，见 [`LICENSE`](LICENSE)。
 
-开源发布前检查清单见 [`docs/open-source-readiness.md`](docs/open-source-readiness.md)。当前仍需在正式仓库地址确定后补充 package URL，并决定是否增加 `SECURITY.md` 与 `CODE_OF_CONDUCT.md`。
+开源发布前检查清单见 [`docs/open-source-readiness.md`](docs/open-source-readiness.md)。当前已提供 `SECURITY.md`、`CODE_OF_CONDUCT.md` 和 package URL metadata。
 
 ## Minimax 接入
 

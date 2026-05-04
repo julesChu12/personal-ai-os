@@ -31,6 +31,11 @@ dependencies = [
   "pytest>=8.0"
 ]
 
+[project.urls]
+Homepage = "https://github.com/julesChu12/personal-ai-os"
+Repository = "https://github.com/julesChu12/personal-ai-os.git"
+Issues = "https://github.com/julesChu12/personal-ai-os/issues"
+
 [build-system]
 requires = ["setuptools>=61", "wheel"]
 build-backend = "setuptools.build_meta"

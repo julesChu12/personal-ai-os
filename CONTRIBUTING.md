@@ -37,4 +37,5 @@ DATABASE_URL="sqlite:///:memory:" python -m pytest -q
 
 - 不提交 `.env`、本地 vault、数据库或向量库运行数据。
 - `OPENAI_COMPAT_API_KEY`、模型密钥和 embedding 密钥必须通过环境变量配置。
-- 开源发布前需要单独确认许可证类型；当前仓库尚未声明开源许可证。
+- 项目使用 Apache-2.0 许可证，贡献代码默认按同一许可证授权。
+- 安全问题请优先按 `SECURITY.md` 私下报告，不要在公开 issue 中粘贴密钥、私有日志或漏洞利用细节。
