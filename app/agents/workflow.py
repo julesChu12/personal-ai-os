@@ -1,4 +1,5 @@
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -40,12 +41,15 @@ class AgentWorkflow:
         task: str,
         request_id: str | None = None,
         plan_payload: dict[str, Any] | None = None,
+        planner_mode: str = "deterministic",
+        execution_mode: str = "sequential",
         persist_agent_result: bool = False,
     ) -> dict[str, Any]:
         try:
+            normalized_execution_mode = _normalize_execution_mode(execution_mode)
             if plan_payload is None:
-                plan = self.planner.plan(task)
-                trace_action = "plan"
+                plan = self.planner.plan(task, mode=planner_mode, registry=self.registry)
+                trace_action = "model_plan" if planner_mode.strip().lower() == "model" else "plan"
             else:
                 plan = validate_agent_plan(plan_payload, self.registry)
                 trace_action = "validate_plan"
@@ -81,39 +85,35 @@ class AgentWorkflow:
         ]
         step_results: list[AgentStepResult] = []
 
-        for step in plan.steps:
-            result = self.executor.execute(step, self.registry)
-            run = record_tool_run(
-                db,
+        ordered_steps = _ordered_steps_for_execution(plan)
+        if normalized_execution_mode == "parallel":
+            _run_parallel_steps(
+                ordered_steps,
+                db=db,
                 user_id=user_id,
                 project_id=project_id,
                 session_id=session_id,
-                result=result,
-                input_payload=step.input,
                 request_id=request_id,
+                executor=self.executor,
+                registry=self.registry,
+                step_results=step_results,
+                trace=trace,
             )
-            step_result = AgentStepResult(
-                tool_name=step.tool_name,
-                input=step.input,
-                status=result.status,
-                output=result.output,
-                error=result.error,
-                run_id=run.id,
+        else:
+            _run_sequential_steps(
+                ordered_steps,
+                db=db,
+                user_id=user_id,
+                project_id=project_id,
+                session_id=session_id,
+                request_id=request_id,
+                executor=self.executor,
+                registry=self.registry,
+                step_results=step_results,
+                trace=trace,
             )
-            step_results.append(step_result)
-            trace.append(
-                {
-                    "agent": "executor",
-                    "action": "execute_tool",
-                    "tool_name": step.tool_name,
-                    "status": result.status,
-                    "run_id": run.id,
-                }
-            )
-            if result.status != "ok":
-                break
 
-        failed = next((step for step in step_results if step.status != "ok"), None)
+        failed = next((step for step in step_results if step.status == "error"), None)
         answer = _build_answer(step_results)
         memory_saved = _persist_agent_result(
             self.memory_pipeline,
@@ -152,8 +152,263 @@ class AgentWorkflow:
         return response
 
 
+def _normalize_execution_mode(execution_mode: str) -> str:
+    normalized = execution_mode.strip().lower()
+    if normalized not in {"sequential", "parallel"}:
+        raise ValueError("execution_mode must be one of: sequential, parallel")
+    return normalized
+
+
+def _ordered_steps_for_execution(plan: Any) -> list[Any]:
+    by_id = {step.step_id: step for step in plan.steps}
+    ordered: list[Any] = []
+    visited: set[str] = set()
+
+    def visit(step: Any) -> None:
+        if step.step_id in visited:
+            return
+        for dependency in _effective_dependencies(step):
+            visit(by_id[dependency])
+        visited.add(step.step_id)
+        ordered.append(step)
+
+    for step in plan.steps:
+        visit(step)
+    return ordered
+
+
+def _run_sequential_steps(
+    steps: list[Any],
+    *,
+    db: Session,
+    user_id: str,
+    project_id: str,
+    session_id: str | None,
+    request_id: str | None,
+    executor: ExecutorAgent,
+    registry: ToolRegistry,
+    step_results: list[AgentStepResult],
+    trace: list[dict[str, Any]],
+) -> None:
+    results_by_id: dict[str, AgentStepResult] = {}
+    for step in steps:
+        if _skip_step_if_condition_misses(step, results_by_id, step_results, trace):
+            continue
+        step_result = _execute_and_record_step(
+            step,
+            db=db,
+            user_id=user_id,
+            project_id=project_id,
+            session_id=session_id,
+            request_id=request_id,
+            executor=executor,
+            registry=registry,
+            trace=trace,
+        )
+        step_results.append(step_result)
+        results_by_id[step.step_id] = step_result
+        if step_result.status != "ok":
+            break
+
+
+def _run_parallel_steps(
+    steps: list[Any],
+    *,
+    db: Session,
+    user_id: str,
+    project_id: str,
+    session_id: str | None,
+    request_id: str | None,
+    executor: ExecutorAgent,
+    registry: ToolRegistry,
+    step_results: list[AgentStepResult],
+    trace: list[dict[str, Any]],
+) -> None:
+    results_by_id: dict[str, AgentStepResult] = {}
+    for batch in _parallel_batches(steps, registry):
+        if len(batch) == 1:
+            step = batch[0]
+            if _skip_step_if_condition_misses(step, results_by_id, step_results, trace):
+                continue
+            step_result = _execute_and_record_step(
+                step,
+                db=db,
+                user_id=user_id,
+                project_id=project_id,
+                session_id=session_id,
+                request_id=request_id,
+                executor=executor,
+                registry=registry,
+                trace=trace,
+            )
+            step_results.append(step_result)
+            results_by_id[step.step_id] = step_result
+        else:
+            raw_results = _execute_parallel_batch(executor, registry, batch)
+            for step in batch:
+                step_result = _record_step_result(
+                    step,
+                    raw_results[step.step_id],
+                    db=db,
+                    user_id=user_id,
+                    project_id=project_id,
+                    session_id=session_id,
+                    request_id=request_id,
+                    trace=trace,
+                )
+                step_results.append(step_result)
+                results_by_id[step.step_id] = step_result
+
+        if any(step.status == "error" for step in step_results):
+            break
+
+
+def _parallel_batches(steps: list[Any], registry: ToolRegistry) -> list[list[Any]]:
+    batches: list[list[Any]] = []
+    current: list[Any] = []
+    for step in steps:
+        if _effective_dependencies(step) or not registry.is_parallel_safe(step.tool_name):
+            if current:
+                batches.append(current)
+                current = []
+            batches.append([step])
+            continue
+        current.append(step)
+    if current:
+        batches.append(current)
+    return batches
+
+
+def _execute_parallel_batch(
+    executor: ExecutorAgent,
+    registry: ToolRegistry,
+    batch: list[Any],
+) -> dict[str, Any]:
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [(step, pool.submit(executor.execute, step, registry)) for step in batch]
+        return {step.step_id: future.result() for step, future in futures}
+
+
+def _skip_step_if_condition_misses(
+    step: Any,
+    results_by_id: dict[str, AgentStepResult],
+    step_results: list[AgentStepResult],
+    trace: list[dict[str, Any]],
+) -> bool:
+    if _condition_matches(step, results_by_id):
+        return False
+    skipped = AgentStepResult(
+        step_id=step.step_id,
+        tool_name=step.tool_name,
+        input=step.input,
+        status="skipped",
+    )
+    step_results.append(skipped)
+    results_by_id[step.step_id] = skipped
+    trace.append(
+        {
+            "agent": "executor",
+            "action": "skip_tool",
+            "tool_name": step.tool_name,
+            "step_id": step.step_id,
+        }
+    )
+    return True
+
+
+def _execute_and_record_step(
+    step: Any,
+    *,
+    db: Session,
+    user_id: str,
+    project_id: str,
+    session_id: str | None,
+    request_id: str | None,
+    executor: ExecutorAgent,
+    registry: ToolRegistry,
+    trace: list[dict[str, Any]],
+) -> AgentStepResult:
+    result = executor.execute(step, registry)
+    return _record_step_result(
+        step,
+        result,
+        db=db,
+        user_id=user_id,
+        project_id=project_id,
+        session_id=session_id,
+        request_id=request_id,
+        trace=trace,
+    )
+
+
+def _record_step_result(
+    step: Any,
+    result: Any,
+    *,
+    db: Session,
+    user_id: str,
+    project_id: str,
+    session_id: str | None,
+    request_id: str | None,
+    trace: list[dict[str, Any]],
+) -> AgentStepResult:
+    run = record_tool_run(
+        db,
+        user_id=user_id,
+        project_id=project_id,
+        session_id=session_id,
+        result=result,
+        input_payload=step.input,
+        request_id=request_id,
+    )
+    step_result = AgentStepResult(
+        step_id=step.step_id,
+        tool_name=step.tool_name,
+        input=step.input,
+        status=result.status,
+        output=result.output,
+        error=result.error,
+        run_id=run.id,
+    )
+    trace.append(
+        {
+            "agent": "executor",
+            "action": "execute_tool",
+            "tool_name": step.tool_name,
+            "step_id": step.step_id,
+            "status": result.status,
+            "run_id": run.id,
+        }
+    )
+    return step_result
+
+
+def _effective_dependencies(step: Any) -> list[str]:
+    dependencies = list(step.depends_on or [])
+    if step.condition is not None:
+        condition_step_id = step.condition["step_id"]
+        if condition_step_id not in dependencies:
+            dependencies.append(condition_step_id)
+    return dependencies
+
+
+def _condition_matches(step: Any, results_by_id: dict[str, AgentStepResult]) -> bool:
+    if not step.condition:
+        return True
+
+    condition = step.condition
+    source = results_by_id.get(condition["step_id"])
+    if source is None:
+        return False
+    if "status" in condition and source.status != condition["status"]:
+        return False
+    if "output_contains" in condition and condition["output_contains"] not in str(source.output or ""):
+        return False
+    return True
+
+
 def _build_answer(step_results: list[AgentStepResult]) -> str:
-    outputs = [str(step.output) for step in step_results if step.output is not None]
+    outputs = [str(step.output) for step in step_results if step.status == "ok" and step.output is not None]
     if outputs:
         return "\n".join(outputs)
     errors = [str(step.error) for step in step_results if step.error]

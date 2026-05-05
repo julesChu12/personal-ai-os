@@ -1,5 +1,7 @@
 import json
 from pathlib import Path
+import subprocess
+import sys
 import unittest
 
 from app.memory.retrieval_quality import (
@@ -12,6 +14,7 @@ from app.memory.retrieval_quality import (
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / "tests" / "fixtures" / "retrieval_quality_cases.json"
+EVALUATE_SCRIPT = ROOT / "scripts" / "evaluate_retrieval_quality.py"
 
 
 class StaticEmbeddingProvider:
@@ -78,7 +81,9 @@ class RetrievalQualityTests(unittest.TestCase):
         report = evaluate_retrieval_quality(provider, cases)
 
         self.assertEqual(report["total_queries"], 2)
+        self.assertEqual(report["total"], 2)
         self.assertEqual(report["hits"], 2)
+        self.assertEqual(report["misses"], 0)
         self.assertEqual(report["hit_rate"], 1.0)
         self.assertEqual(report["queries"][0]["top_ids"], ["rag"])
 
@@ -113,3 +118,99 @@ def test_fixture_is_json_serializable():
 
     assert payload["memories"]
     assert payload["queries"]
+
+
+def test_evaluate_retrieval_quality_script_accepts_min_hit_rate():
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(EVALUATE_SCRIPT),
+            "--fixture",
+            str(FIXTURE),
+            "--min-hit-rate",
+            "1.0",
+        ],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert "hit_rate=1.00" in result.stdout
+    assert "min_hit_rate=1.00" in result.stdout
+
+
+def test_evaluate_retrieval_quality_script_fails_when_min_hit_rate_not_met():
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(EVALUATE_SCRIPT),
+            "--fixture",
+            str(FIXTURE),
+            "--min-hit-rate",
+            "1.01",
+        ],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "hit_rate 1.00 is below min_hit_rate 1.01" in result.stderr
+
+
+def test_evaluate_retrieval_quality_json_report_has_stable_summary_schema():
+    result = subprocess.run(
+        [sys.executable, str(EVALUATE_SCRIPT), "--fixture", str(FIXTURE), "--json"],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    payload = json.loads(result.stdout)
+    for key in ["hit_rate", "total", "hits", "misses", "top_k"]:
+        assert key in payload
+
+
+class FakeVectorStore:
+    def __init__(self) -> None:
+        self.memories: list[dict] = []
+
+    def upsert_memory(self, content: str, payload: dict, point_id: str | None = None) -> None:
+        self.memories.append({"content": content, "payload": payload, "point_id": point_id})
+
+    def search(self, query: str, user_id: str, project_id: str, top_k: int) -> list[dict]:
+        expected_id = query.replace("find ", "")
+        ordered = sorted(
+            self.memories,
+            key=lambda item: item["payload"]["id"] != expected_id,
+        )
+        return [{"payload": item["payload"]} for item in ordered[:top_k]]
+
+
+def test_qdrant_retrieval_quality_report_has_stable_summary_schema():
+    from scripts.evaluate_qdrant_retrieval_quality import evaluate_qdrant_retrieval_quality
+
+    cases = {
+        "top_k": 1,
+        "memories": [
+            {"id": "rag", "content": "rag memory"},
+            {"id": "webui", "content": "webui memory"},
+        ],
+        "queries": [
+            {"id": "q-rag", "query": "find rag", "expected_ids": ["rag"]},
+            {"id": "q-webui", "query": "find webui", "expected_ids": ["webui"]},
+        ],
+    }
+
+    report = evaluate_qdrant_retrieval_quality(FakeVectorStore(), cases, "u", "p")
+
+    assert report["total"] == 2
+    assert report["hits"] == 2
+    assert report["misses"] == 0
+    assert report["hit_rate"] == 1.0
+    assert report["top_k"] == 1

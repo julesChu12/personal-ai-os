@@ -11,10 +11,13 @@
 - Security policy: 已提供根目录 `SECURITY.md`，明确漏洞报告和 secret 处理原则。
 - Code of conduct: 已提供根目录 `CODE_OF_CONDUCT.md`，明确贡献沟通边界。
 - Repository URLs: `pyproject.toml` 已配置 GitHub homepage、repository 和 issues URL。
+- GitHub repository: `main` 已推送到 `git@github.com:julesChu12/personal-ai-os.git`，默认分支为 `main`。
+- GitHub Actions: 最新 `CI` workflow 已通过 test 和 Docker smoke。
 
 ## 未决
 
 - Obsidian sync: 当前支持写入 Obsidian，文件监听、增量同步和冲突处理仍需独立 spec。
+- Branch protection / release policy: 开源协作稳定后再决定是否强制 PR、required checks 和 release tag 流程。
 
 ## 发布前检查
 
@@ -23,3 +26,4 @@
 - Run `bash scripts/smoke_api.sh`.
 - Confirm `.env` is not tracked.
 - Confirm README startup steps work on a clean machine.
+- Confirm latest GitHub Actions `CI` run is green before release tagging.

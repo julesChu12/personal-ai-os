@@ -21,6 +21,11 @@ def test_pyproject_has_open_source_package_metadata():
     assert "local-first" in project["keywords"]
     assert "License :: OSI Approved :: Apache Software License" in project["classifiers"]
     assert "Framework :: FastAPI" in project["classifiers"]
+    assert project["urls"] == {
+        "Homepage": "https://github.com/julesChu12/personal-ai-os",
+        "Repository": "https://github.com/julesChu12/personal-ai-os.git",
+        "Issues": "https://github.com/julesChu12/personal-ai-os/issues",
+    }
 
 
 def test_license_file_is_apache_2_0():

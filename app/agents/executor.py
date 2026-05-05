@@ -13,9 +13,11 @@ class AgentStepResult:
     output: Any | None = None
     error: str | None = None
     run_id: int | None = None
+    step_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
+            "id": self.step_id,
             "tool_name": self.tool_name,
             "input": self.input,
             "status": self.status,

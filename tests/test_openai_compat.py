@@ -112,6 +112,7 @@ def load_openai_compat_module(
     db=None,
     pipeline_cls=RecordingMemoryPipeline,
     compat_api_key="EMPTY",
+    compat_api_keys=None,
 ):
     stub_names = [
         "app.config",
@@ -134,7 +135,7 @@ def load_openai_compat_module(
     testcase.addCleanup(restore_modules)
 
     config_module = types.ModuleType("app.config")
-    config_module.settings = SimpleNamespace(openai_compat_api_key=compat_api_key)
+    config_module.settings = SimpleNamespace(openai_compat_api_key=compat_api_key, openai_compat_api_keys=compat_api_keys)
     sys.modules["app.config"] = config_module
 
     orchestrator_module = types.ModuleType("app.core.orchestrator")
@@ -352,6 +353,57 @@ class OpenAICompatRouteTests(unittest.TestCase):
                 "candidates": ["candidate"],
             },
         )
+
+    def test_chat_completions_uses_key_bound_scope_when_metadata_is_absent(self):
+        fake_db = FakeDb()
+        router_module = load_openai_compat_module(
+            self,
+            db=fake_db,
+            compat_api_keys='[{"key":"project-key","user_id":"alice","project_id":"project-a"}]',
+        )
+        client = build_client(router_module)
+
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "personal-ai-os-chat",
+                "messages": [{"role": "user", "content": "项目内问题"}],
+                "stream": False,
+            },
+            headers={"Authorization": "Bearer project-key", "X-Session-Id": "session-a"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            RecordingOrchestrator.instances[0].calls[0],
+            {
+                "user_id": "alice",
+                "project_id": "project-a",
+                "session_id": "session-a",
+                "message": "项目内问题",
+            },
+        )
+
+    def test_chat_completions_rejects_metadata_scope_outside_key_binding(self):
+        router_module = load_openai_compat_module(
+            self,
+            compat_api_keys='[{"key":"project-key","user_id":"alice","project_id":"project-a"}]',
+        )
+        client = build_client(router_module)
+
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "personal-ai-os-chat",
+                "messages": [{"role": "user", "content": "跨项目问题"}],
+                "stream": False,
+                "metadata": {"user_id": "bob", "project_id": "project-a"},
+            },
+            headers={"Authorization": "Bearer project-key"},
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json()["detail"], "scope is outside API key binding")
 
     def test_chat_completions_rejects_empty_messages(self):
         router_module = load_openai_compat_module(self)

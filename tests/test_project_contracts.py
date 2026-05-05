@@ -154,6 +154,7 @@ def test_request_context_contract_is_documented():
 
 
 def test_session_identity_contract_is_documented():
+    auth = read_text("app/core/auth.py")
     session_identity = read_text("app/core/session_identity.py")
     openai_compat = read_text("app/api/routes_openai_compat.py")
     sessions_route = read_text("app/api/routes_sessions.py")
@@ -163,17 +164,24 @@ def test_session_identity_contract_is_documented():
 
     assert "resolve_openai_identity" in session_identity
     assert "resolve_project_scope" in session_identity
+    assert "class ApiPrincipal" in auth
+    assert "authenticate_bearer" in auth
+    assert "bind_openai_identity_to_principal" in auth
+    assert "OPENAI_COMPAT_API_KEYS" in read_text(".env.example")
     assert "DEFAULT_OPENWEBUI_USER_ID" in session_identity
     assert "resolve_openai_identity" in openai_compat
+    assert "bind_openai_identity_to_principal" in openai_compat
     assert "resolve_project_scope" in sessions_route
     assert "metadata.user_id" in readme
     assert "metadata.project_id" in readme
+    assert "OPENAI_COMPAT_API_KEYS" in readme
     assert "X-Session-Id" in readme
     assert "Session and project identity" in testing
     assert "`/sessions` 查询必须同时提供非空 `user_id` 和 `project_id`" in testing
     assert "Task P1-1" in roadmap
     assert "Session / Project 语义收紧" in roadmap
     assert "状态：已完成基础版。" in roadmap
+    assert "多 API Key 与 user/project 绑定" in roadmap
 
 
 def test_memory_governance_contract_is_documented():
@@ -223,6 +231,8 @@ def test_provider_reliability_contract_is_documented():
 def test_p2_tool_layer_contract_is_documented():
     registry = read_text("app/tools/registry.py")
     routes_tools = read_text("app/api/routes_tools.py")
+    mcp_server = read_text("app/tools/mcp_server.py")
+    mcp_runner = read_text("scripts/run_mcp_server.py")
     main = read_text("app/main.py")
     models = read_text("app/db/models.py")
     migration = read_text("app/db/migrations/versions/v0002_tool_runs.py")
@@ -233,16 +243,26 @@ def test_p2_tool_layer_contract_is_documented():
     assert "class ToolRegistry" in registry
     assert "build_default_tool_registry" in registry
     assert "file.read_text" in registry
+    assert "file.write_text" in registry
+    assert "obsidian.append_note" in registry
     assert "shell.run_safe" in registry
     assert "router = APIRouter(prefix=\"/tools\"" in routes_tools
     assert "@router.get(\"\")" in routes_tools
     assert "@router.post(\"/{tool_name}/invoke\")" in routes_tools
+    assert "require_tools_principal" in routes_tools
+    assert "enforce_principal_scope" in routes_tools
     assert "@router.get(\"/runs\")" in routes_tools
+    assert "handle_mcp_request" in mcp_server
+    assert "tools/list" in mcp_server
+    assert "tools/call" in mcp_server
+    assert "run_mcp_server.py" in mcp_runner
     assert "routes_tools_router" in main
     assert "class ToolRun" in models
     assert "tool_runs" in migration
     assert "Tool Registry" in readme
+    assert "MCP" in readme
     assert "Tool adapter" in testing
+    assert "MCP" in testing
     assert "Task P2-1" in roadmap
     assert "Task P2-2" in roadmap
     assert "Task P2-3" in roadmap
@@ -263,6 +283,15 @@ def test_p3_agent_workflow_contract_is_documented():
     assert "validate_agent_plan" in planner
     assert "AgentPlanValidationError" in planner
     assert "def plan" in planner
+    assert "depends_on" in planner
+    assert "planner_mode" in workflow
+    assert "execution_mode" in workflow
+    assert "planner_mode" in routes_agents
+    assert "execution_mode" in routes_agents
+    assert "require_agents_principal" in routes_agents
+    assert "enforce_principal_scope" in routes_agents
+    assert "model planner request failed" in planner
+    assert "validate_agent_plan(raw_plan, registry)" in planner
     assert "class ExecutorAgent" in executor
     assert "def execute" in executor
     assert "class AgentWorkflow" in workflow
@@ -279,6 +308,8 @@ def test_p3_agent_workflow_contract_is_documented():
     assert "@router.get(\"/agents/runs\")" in routes_agents
     assert "@router.post(\"/agents/run\")" in routes_agents
     assert "Agent workflow" in testing
+    assert "模型化 Planner" in testing
+    assert "planner_mode=model" in testing
     assert "Structured Agent Plan" in testing
     assert "failure short-circuit" in testing
     assert "agent_result" in testing
@@ -293,17 +324,24 @@ def test_p3_agent_workflow_contract_is_documented():
     assert "Agent 结果按策略进入长期记忆" in roadmap
     assert "Agent Run 持久化与查询" in roadmap
     assert "已完成基础版" in roadmap
+    assert "Task N2" in roadmap
+    assert "状态：已完成" in roadmap
 
 
 def test_retrieval_quality_evaluation_contract_is_documented():
     script = read_text("scripts/evaluate_retrieval_quality.py")
     testing = read_text("docs/testing.md")
+    readme = read_text("README.md")
 
     assert "evaluate_retrieval_quality" in script
     assert "retrieval_quality_cases.json" in script
     assert "--top-k" in script
     assert "--json" in script
+    assert "--min-hit-rate" in script
+    assert "min_hit_rate_error" in script
     assert "retrieval quality" in testing.lower()
+    assert "--min-hit-rate 1.0" in testing
+    assert "--min-hit-rate 1.0" in readme
 
 
 def test_qdrant_retrieval_quality_evaluation_contract_is_documented():
@@ -315,6 +353,8 @@ def test_qdrant_retrieval_quality_evaluation_contract_is_documented():
     assert "retrieval_quality_cases.json" in script
     assert "--user-id" in script
     assert "--project-id" in script
+    assert "--min-hit-rate" in script
+    assert "min_hit_rate_error" in script
     assert "uuid.uuid5" in script
     assert "qdrant retrieval quality" in testing.lower()
 
@@ -350,4 +390,53 @@ def test_open_source_readiness_document_tracks_release_blockers():
     assert "Secrets" in text
     assert "CI" in text
     assert "Docker smoke" in text
+    assert "Security policy" in text
+    assert "Code of conduct" in text
+    assert "Repository URLs" in text
+    assert "GitHub Actions" in text
     assert "未决" in text
+
+
+def test_readme_documents_current_progress_and_next_stage():
+    readme = read_text("README.md")
+
+    assert "## 当前项目进度" in readme
+    assert "整体进度约为 85%" in readme
+    assert "当前阶段目标" in readme
+    assert "N1" in readme
+    assert "N2" in readme
+    assert "N7" in readme
+    assert "next-stage-execution-spec.md" in readme
+
+
+def test_next_stage_spec_and_plan_are_documented():
+    spec = read_text("docs/superpowers/specs/2026-05-04-next-stage-execution-spec.md")
+    plan = read_text("docs/superpowers/plans/2026-05-04-next-stage-execution.md")
+    roadmap = read_text("docs/development-roadmap.md")
+    testing = read_text("docs/testing.md")
+
+    for task_id in ["N1", "N2", "N3a", "N3b", "N4", "N5", "N6", "N7", "N8", "N9", "N10"]:
+        assert task_id in spec
+        assert task_id in plan
+        assert task_id in roadmap
+
+    assert "P4 / N-series" in roadmap
+    assert "| N1 retrieval-quality-foundation 规格收尾验证 | P0 | 已完成 |" in roadmap
+    assert "| N2 Planner 模型化 | P0 | 已完成 |" in roadmap
+    assert "| N7 多 API Key 与 user/project 绑定 | P1 | 已完成 |" in roadmap
+    assert "| N5 MCP Server 适配 | P1 | 已完成 |" in roadmap
+    assert "| N3a Executor 条件分支与顺序 DAG | P1 | 已完成 |" in roadmap
+    assert "| N4 写类工具白名单 | P1 | 已完成 |" in roadmap
+    assert "| N3b Executor 有限并行 | P2 | 已完成 |" in roadmap
+    assert "| N1 | retrieval-quality-foundation 规格收尾验证 | P0 | 0.5-1 天 | 已完成 |" in spec
+    assert "| N2 | Planner 模型化：受控生成结构化 plan | P0 | 2-3 天 | 已完成 |" in spec
+    assert "| N7 | 多 API Key 与 user/project 绑定 | P1 | 2 天 | 已完成 |" in spec
+    assert "| N5 | MCP Server 适配：只读暴露 Tool Registry | P1 | 2 天 | 已完成 |" in spec
+    assert "| N3a | Executor 条件分支与顺序 DAG | P1 | 1-2 天 | 已完成 |" in spec
+    assert "| N4 | 写类工具白名单 | P1 | 1-2 天 | 已完成 |" in spec
+    assert "| N3b | Executor 有限并行 | P2 | 1-2 天 | 已完成 |" in spec
+    assert "- [x] **Step 5: Verify**" in plan
+    assert "Coverage audit" not in testing
+    assert "覆盖审计" in testing
+    assert "177 个测试用例" in testing
+    assert "N5 / N3 / N4 的新增功能已补齐以下回归覆盖" in testing

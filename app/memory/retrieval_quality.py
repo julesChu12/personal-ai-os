@@ -73,10 +73,23 @@ def evaluate_retrieval_quality(provider: Any, cases: dict[str, Any], top_k: int 
         )
 
     total = len(cases["queries"])
+    misses = total - hits
     return {
         "top_k": effective_top_k,
+        "total": total,
         "total_queries": total,
         "hits": hits,
+        "misses": misses,
         "hit_rate": hits / total if total else 0.0,
         "queries": query_reports,
     }
+
+
+def min_hit_rate_error(report: dict[str, Any], min_hit_rate: float | None) -> str | None:
+    """Return an error message when a retrieval report fails the configured threshold."""
+    if min_hit_rate is None:
+        return None
+    hit_rate = float(report.get("hit_rate", 0.0))
+    if hit_rate >= min_hit_rate:
+        return None
+    return f"hit_rate {hit_rate:.2f} is below min_hit_rate {min_hit_rate:.2f}"

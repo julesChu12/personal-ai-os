@@ -2,8 +2,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
-from app.tools.file_tool import read_text, resolve_within_base
+from app.tools.file_tool import read_text, resolve_within_base, write_text
 from app.tools.git_tool import status as git_status
+from app.tools.obsidian_tool import append_note
 from app.tools.shell_tool import run_safe
 
 
@@ -63,6 +64,10 @@ class ToolRegistry:
             raise ToolNotFoundError(name)
         return self._tools[name][0]
 
+    def is_parallel_safe(self, name: str) -> bool:
+        definition = self.get_definition(name)
+        return definition.risk_level == "read"
+
     def invoke(self, name: str, input_payload: dict[str, Any] | None = None) -> ToolInvocationResult:
         if name not in self._tools:
             raise ToolNotFoundError(name)
@@ -75,9 +80,10 @@ class ToolRegistry:
         return ToolInvocationResult(tool_name=name, status="ok", output=output)
 
 
-def build_default_tool_registry(base_dir: str = ".") -> ToolRegistry:
+def build_default_tool_registry(base_dir: str = ".", obsidian_vault_path: str | None = None) -> ToolRegistry:
     registry = ToolRegistry()
     resolved_base = str(Path(base_dir).resolve())
+    resolved_vault = str(Path(obsidian_vault_path or _default_obsidian_vault_path()).resolve())
 
     registry.register(
         ToolDefinition(
@@ -91,6 +97,46 @@ def build_default_tool_registry(base_dir: str = ".") -> ToolRegistry:
             risk_level="read",
         ),
         lambda payload: read_text(_required_string(payload, "path"), base_dir=resolved_base),
+    )
+    registry.register(
+        ToolDefinition(
+            name="file.write_text",
+            description="Write a new UTF-8 text file inside the allowed workspace. Existing files are refused.",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"},
+                    "content": {"type": "string"},
+                },
+                "required": ["path", "content"],
+            },
+            risk_level="write",
+        ),
+        lambda payload: write_text(
+            _required_string(payload, "path"),
+            _required_text(payload, "content"),
+            base_dir=resolved_base,
+        ),
+    )
+    registry.register(
+        ToolDefinition(
+            name="obsidian.append_note",
+            description="Append text to a Markdown note inside the configured Obsidian vault.",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"},
+                    "content": {"type": "string"},
+                },
+                "required": ["path", "content"],
+            },
+            risk_level="write",
+        ),
+        lambda payload: append_note(
+            _required_string(payload, "path"),
+            _required_string(payload, "content"),
+            vault_path=resolved_vault,
+        ),
     )
     registry.register(
         ToolDefinition(
@@ -130,6 +176,13 @@ def _required_string(payload: dict[str, Any], key: str) -> str:
     return value
 
 
+def _required_text(payload: dict[str, Any], key: str) -> str:
+    value = payload.get(key)
+    if not isinstance(value, str):
+        raise ValueError(f"{key} must be a string")
+    return value
+
+
 def _resolve_cwd(payload: dict[str, Any], base_dir: str) -> str:
     cwd = payload.get("cwd") or "."
     if not isinstance(cwd, str):
@@ -138,3 +191,9 @@ def _resolve_cwd(payload: dict[str, Any], base_dir: str) -> str:
     if not path.is_dir():
         raise ValueError("cwd is not a directory")
     return str(path)
+
+
+def _default_obsidian_vault_path() -> str:
+    from app.config import settings
+
+    return settings.obsidian_vault_path

@@ -8,6 +8,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.core.auth import authenticate_bearer, bind_openai_identity_to_principal
 from app.core.chat_persistence import persist_chat_exchange
 from app.core.orchestrator import Orchestrator
 from app.core.schemas import OpenAICompatChatRequest, OpenAICompatMessage
@@ -20,15 +21,9 @@ MODEL_ID = "personal-ai-os-chat"
 MODEL_OWNER = "personal-ai-os"
 
 
-def _check_authorization(authorization: str | None):
+def _check_authorization(authorization: str | None, *, required_permission: str | None = "chat"):
     """校验 Open WebUI 使用的共享兼容层密钥。"""
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="missing bearer token")
-    token = authorization.removeprefix("Bearer ").strip()
-    if not token:
-        raise HTTPException(status_code=401, detail="missing bearer token")
-    if token != settings.openai_compat_api_key:
-        raise HTTPException(status_code=401, detail="invalid bearer token")
+    return authenticate_bearer(authorization, settings, required_permission=required_permission)
 
 
 def _build_prompt(messages: list[OpenAICompatMessage]) -> str | None:
@@ -56,6 +51,24 @@ def _get_latest_user_message(messages: list[OpenAICompatMessage]) -> str | None:
         if message.role == "user":
             return message.content
     return None
+
+
+def _requested_user_id(req: OpenAICompatChatRequest) -> str | None:
+    metadata = req.metadata or {}
+    value = metadata.get("user_id") or req.user
+    if value is None:
+        return None
+    normalized = str(value).strip()
+    return normalized or None
+
+
+def _requested_project_id(req: OpenAICompatChatRequest) -> str | None:
+    metadata = req.metadata or {}
+    value = metadata.get("project_id")
+    if value is None:
+        return None
+    normalized = str(value).strip()
+    return normalized or None
 
 
 def _extract_stream_content(chunk: str) -> str:
@@ -126,7 +139,7 @@ async def chat_completions(
     x_session_id: str | None = Header(default=None),
     db: Session = Depends(get_db),
 ):
-    _check_authorization(authorization)
+    principal = _check_authorization(authorization)
 
     if not req.messages:
         raise HTTPException(status_code=400, detail="messages must not be empty")
@@ -138,7 +151,12 @@ async def chat_completions(
     if user_message is None:
         raise HTTPException(status_code=400, detail="at least one user message is required")
 
-    identity = resolve_openai_identity(req, x_session_id)
+    identity = bind_openai_identity_to_principal(
+        principal,
+        resolve_openai_identity(req, x_session_id),
+        requested_user_id=_requested_user_id(req),
+        requested_project_id=_requested_project_id(req),
+    )
 
     if req.stream:
         return StreamingResponse(

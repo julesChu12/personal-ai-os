@@ -1,6 +1,7 @@
 from typing import Any
 
 from app.config import settings
+from app.core.auth import count_structured_api_key_bindings
 
 
 LOCAL_ENVS = {"local", "dev", "development", "test"}
@@ -100,6 +101,29 @@ def _check_qdrant(settings_obj: Any) -> dict[str, Any]:
 
 
 def _check_openai_compat_api_key(settings_obj: Any, strict_mode: bool) -> dict[str, Any]:
+    try:
+        bindings = count_structured_api_key_bindings(settings_obj)
+    except ValueError:
+        return validation_check(
+            "openai_compat_api_key",
+            "error",
+            "openai_compat_api_keys is invalid",
+            {
+                "configured": _configured(getattr(settings_obj, "openai_compat_api_keys", None)),
+            },
+        )
+    if bindings > 0:
+        return validation_check(
+            "openai_compat_api_key",
+            "ok",
+            "structured OpenAI-compatible API keys are configured",
+            {
+                "configured": True,
+                "default": False,
+                "bindings": bindings,
+            },
+        )
+
     key = getattr(settings_obj, "openai_compat_api_key", None)
     uses_default = not _configured(key) or key == "EMPTY"
     if uses_default:

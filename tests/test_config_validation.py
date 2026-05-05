@@ -10,6 +10,7 @@ def settings(**overrides):
         "qdrant_url": "http://qdrant:6333",
         "qdrant_collection": "memories",
         "openai_compat_api_key": "EMPTY",
+        "openai_compat_api_keys": None,
         "embedding_provider": "mock",
         "embedding_api_key": None,
         "embedding_base_url": None,
@@ -92,3 +93,36 @@ def test_validation_report_does_not_leak_secret_values():
     assert "embedding-secret" not in serialized
     assert "model-secret" not in serialized
     assert "secret-pass" not in serialized
+
+
+def test_multi_openai_compat_api_keys_are_validated_without_leaking_values():
+    report = validate_runtime_config(
+        settings(
+            app_env="production",
+            openai_compat_api_key="EMPTY",
+            openai_compat_api_keys=(
+                '[{"key":"project-secret","user_id":"alice","project_id":"personal",'
+                '"permissions":["chat","tools","agents"]}]'
+            ),
+            embedding_provider="openai-compatible",
+            embedding_api_key="embedding-secret",
+            embedding_base_url="https://example.com/v1",
+            embedding_model="text-embedding-3-small",
+            openai_api_key="model-secret",
+        ),
+        strict=True,
+    )
+
+    check = check_by_name(report, "openai_compat_api_key")
+    assert check["status"] == "ok"
+    assert check["details"]["bindings"] == 1
+    assert "project-secret" not in str(report)
+
+
+def test_malformed_multi_openai_compat_api_keys_are_errors():
+    report = validate_runtime_config(settings(openai_compat_api_keys="not-json"))
+
+    check = check_by_name(report, "openai_compat_api_key")
+    assert report["status"] == "error"
+    assert check["status"] == "error"
+    assert "invalid" in check["message"]

@@ -3,9 +3,22 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.agents.workflow import AgentWorkflow
+from app.agents.planner import PlannerAgent
+from app.core.provider_errors import ProviderRequestError
 from app.db.database import Base
 from app.db.models import AgentRun, ToolRun
 from app.tools.registry import build_default_tool_registry
+
+
+class FakeModelRouter:
+    def __init__(self, response=None, exc: Exception | None = None) -> None:
+        self.response = response
+        self.exc = exc
+
+    def chat(self, messages, **kwargs):
+        if self.exc:
+            raise self.exc
+        return self.response
 
 
 class RecordingMemoryPipeline:
@@ -103,6 +116,90 @@ def test_agent_workflow_executes_valid_structured_plan(tmp_path):
     assert result["steps"][0]["tool_name"] == "file.read_text"
 
 
+def test_agent_workflow_executes_valid_model_generated_plan(tmp_path):
+    note = tmp_path / "note.md"
+    note.write_text("model plan output", encoding="utf-8")
+    db = build_db_session()
+    planner = PlannerAgent(
+        model_router=FakeModelRouter(
+            response='{"steps":[{"tool_name":"file.read_text","input":{"path":"note.md"},"reason":"read note via model plan"}]}'
+        )
+    )
+    workflow = AgentWorkflow(planner=planner, registry=build_default_tool_registry(base_dir=str(tmp_path)))
+
+    result = workflow.run(
+        db=db,
+        user_id="u1",
+        project_id="p1",
+        session_id="s1",
+        task="read note through model planner",
+        request_id="req-agent-model-plan",
+        planner_mode="model",
+    )
+
+    assert result["status"] == "ok"
+    assert result["answer"] == "model plan output"
+    assert result["agent_trace"][0]["action"] == "model_plan"
+    assert result["steps"][0]["tool_name"] == "file.read_text"
+    assert db.query(ToolRun).count() == 1
+    agent_run = db.query(AgentRun).one()
+    assert agent_run.plan_payload["steps"][0]["tool_name"] == "file.read_text"
+
+
+def test_agent_workflow_rejects_invalid_model_plan_without_tool_run(tmp_path):
+    db = build_db_session()
+    planner = PlannerAgent(
+        model_router=FakeModelRouter(
+            response='{"steps":[{"tool_name":"danger.delete","input":{"path":"note.md"},"reason":"delete note"}]}'
+        )
+    )
+    workflow = AgentWorkflow(planner=planner, registry=build_default_tool_registry(base_dir=str(tmp_path)))
+
+    result = workflow.run(
+        db=db,
+        user_id="u1",
+        project_id="p1",
+        session_id="s1",
+        task="delete note through model planner",
+        request_id="req-agent-model-plan-invalid",
+        planner_mode="model",
+    )
+
+    assert result["status"] == "error"
+    assert "tool is not registered" in result["error"]
+    assert result["steps"] == []
+    assert db.query(ToolRun).count() == 0
+    agent_run = db.query(AgentRun).one()
+    assert agent_run.id == result["agent_run_id"]
+    assert agent_run.status == "error"
+    assert "tool is not registered" in agent_run.error
+
+
+def test_agent_workflow_wraps_model_planner_provider_failure_without_tool_run(tmp_path):
+    db = build_db_session()
+    planner = PlannerAgent(model_router=FakeModelRouter(exc=ProviderRequestError("secret-token leaked")))
+    workflow = AgentWorkflow(planner=planner, registry=build_default_tool_registry(base_dir=str(tmp_path)))
+
+    result = workflow.run(
+        db=db,
+        user_id="u1",
+        project_id="p1",
+        session_id="s1",
+        task="plan with failing provider",
+        request_id="req-agent-model-provider-failed",
+        planner_mode="model",
+    )
+
+    assert result["status"] == "error"
+    assert result["error"] == "model planner request failed"
+    assert "secret-token" not in str(result)
+    assert result["steps"] == []
+    assert db.query(ToolRun).count() == 0
+    agent_run = db.query(AgentRun).one()
+    assert agent_run.status == "error"
+    assert agent_run.error == "model planner request failed"
+
+
 def test_agent_workflow_executes_multi_step_structured_plan(tmp_path):
     first = tmp_path / "first.md"
     second = tmp_path / "second.md"
@@ -138,6 +235,142 @@ def test_agent_workflow_executes_multi_step_structured_plan(tmp_path):
     assert result["answer"] == "first output\nsecond output"
     assert [step["status"] for step in result["steps"]] == ["ok", "ok"]
     assert db.query(ToolRun).count() == 2
+
+
+def test_agent_workflow_executes_dag_in_dependency_order(tmp_path):
+    first = tmp_path / "first.md"
+    second = tmp_path / "second.md"
+    first.write_text("first output", encoding="utf-8")
+    second.write_text("second output", encoding="utf-8")
+    db = build_db_session()
+    workflow = AgentWorkflow(registry=build_default_tool_registry(base_dir=str(tmp_path)))
+
+    result = workflow.run(
+        db=db,
+        user_id="u1",
+        project_id="p1",
+        session_id="s1",
+        task="dag plan",
+        plan_payload={
+            "steps": [
+                {
+                    "id": "second",
+                    "depends_on": ["first"],
+                    "tool_name": "file.read_text",
+                    "input": {"path": "second.md"},
+                    "reason": "read second",
+                },
+                {
+                    "id": "first",
+                    "tool_name": "file.read_text",
+                    "input": {"path": "first.md"},
+                    "reason": "read first",
+                },
+            ]
+        },
+    )
+
+    assert result["status"] == "ok"
+    assert [step["id"] for step in result["steps"]] == ["first", "second"]
+    assert result["answer"] == "first output\nsecond output"
+
+
+def test_agent_workflow_records_condition_skipped_step_without_tool_run(tmp_path):
+    note = tmp_path / "note.md"
+    note.write_text("dirty working tree", encoding="utf-8")
+    db = build_db_session()
+    workflow = AgentWorkflow(registry=build_default_tool_registry(base_dir=str(tmp_path)))
+
+    result = workflow.run(
+        db=db,
+        user_id="u1",
+        project_id="p1",
+        session_id="s1",
+        task="conditional plan",
+        plan_payload={
+            "steps": [
+                {
+                    "id": "read",
+                    "tool_name": "file.read_text",
+                    "input": {"path": "note.md"},
+                    "reason": "read note",
+                },
+                {
+                    "id": "pwd-if-clean",
+                    "depends_on": ["read"],
+                    "condition": {"step_id": "read", "output_contains": "nothing to commit"},
+                    "tool_name": "shell.run_safe",
+                    "input": {"command": "pwd"},
+                    "reason": "show cwd only when clean",
+                },
+            ]
+        },
+    )
+
+    assert result["status"] == "ok"
+    assert [step["status"] for step in result["steps"]] == ["ok", "skipped"]
+    assert result["steps"][1]["run_id"] is None
+    assert db.query(ToolRun).count() == 1
+    assert result["agent_trace"][-1]["action"] == "skip_tool"
+
+
+def test_agent_workflow_parallel_mode_preserves_plan_order(tmp_path):
+    first = tmp_path / "first.md"
+    second = tmp_path / "second.md"
+    first.write_text("first output", encoding="utf-8")
+    second.write_text("second output", encoding="utf-8")
+    db = build_db_session()
+    workflow = AgentWorkflow(registry=build_default_tool_registry(base_dir=str(tmp_path)))
+
+    result = workflow.run(
+        db=db,
+        user_id="u1",
+        project_id="p1",
+        session_id="s1",
+        task="parallel reads",
+        execution_mode="parallel",
+        plan_payload={
+            "steps": [
+                {"id": "first", "tool_name": "file.read_text", "input": {"path": "first.md"}, "reason": "read first"},
+                {
+                    "id": "second",
+                    "tool_name": "file.read_text",
+                    "input": {"path": "second.md"},
+                    "reason": "read second",
+                },
+            ]
+        },
+    )
+
+    assert result["status"] == "ok"
+    assert [step["id"] for step in result["steps"]] == ["first", "second"]
+    assert result["answer"] == "first output\nsecond output"
+
+
+def test_agent_workflow_parallel_mode_keeps_guarded_tools_sequential(tmp_path):
+    db = build_db_session()
+    workflow = AgentWorkflow(registry=build_default_tool_registry(base_dir=str(tmp_path)))
+
+    result = workflow.run(
+        db=db,
+        user_id="u1",
+        project_id="p1",
+        session_id="s1",
+        task="parallel guarded",
+        execution_mode="parallel",
+        plan_payload={
+            "steps": [
+                {"id": "pwd", "tool_name": "shell.run_safe", "input": {"command": "pwd"}, "reason": "show cwd"},
+                {"id": "status", "tool_name": "git.status", "input": {}, "reason": "git status"},
+            ]
+        },
+    )
+
+    assert result["status"] == "ok"
+    assert [entry["action"] for entry in result["agent_trace"] if entry["agent"] == "executor"] == [
+        "execute_tool",
+        "execute_tool",
+    ]
 
 
 def test_agent_workflow_stops_after_first_failed_step(tmp_path):

@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     openai_base_url: str = "https://api.openai.com/v1"
     openai_model: str = "gpt-4o-mini"
     openai_compat_api_key: str = "EMPTY"
+    openai_compat_api_keys: str | None = None
     provider_timeout_seconds: float = 120.0
     provider_retry_attempts: int = 1
     embedding_api_key: str | None = None

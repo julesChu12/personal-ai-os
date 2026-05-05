@@ -1,10 +1,12 @@
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.request_validation import normalize_optional_string, require_non_blank
+from app.config import settings
+from app.core.auth import ApiPrincipal, authenticate_bearer, enforce_principal_scope
 from app.core.request_context import REQUEST_ID_HEADER, get_request_id
 from app.db.database import get_db
 from app.db.models import ToolRun
@@ -26,8 +28,22 @@ def get_tool_registry() -> ToolRegistry:
     return build_default_tool_registry()
 
 
+def get_auth_settings():
+    return settings
+
+
+def require_tools_principal(
+    authorization: str | None = Header(default=None),
+    settings_obj=Depends(get_auth_settings),
+) -> ApiPrincipal:
+    return authenticate_bearer(authorization, settings_obj, required_permission="tools")
+
+
 @router.get("")
-def list_tools(registry: ToolRegistry = Depends(get_tool_registry)) -> dict[str, Any]:
+def list_tools(
+    registry: ToolRegistry = Depends(get_tool_registry),
+    principal: ApiPrincipal = Depends(require_tools_principal),
+) -> dict[str, Any]:
     return {"tools": [tool.to_dict() for tool in registry.list_tools()]}
 
 
@@ -37,9 +53,11 @@ def list_tool_runs(
     project_id: str = Query(...),
     limit: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
+    principal: ApiPrincipal = Depends(require_tools_principal),
 ) -> dict[str, Any]:
     user_id = require_non_blank("user_id", user_id)
     project_id = require_non_blank("project_id", project_id)
+    enforce_principal_scope(principal, user_id=user_id, project_id=project_id)
     runs = (
         db.query(ToolRun)
         .filter_by(user_id=user_id, project_id=project_id)
@@ -57,9 +75,11 @@ def invoke_tool(
     request: Request,
     db: Session = Depends(get_db),
     registry: ToolRegistry = Depends(get_tool_registry),
+    principal: ApiPrincipal = Depends(require_tools_principal),
 ) -> dict[str, Any]:
     user_id = require_non_blank("user_id", payload.user_id)
     project_id = require_non_blank("project_id", payload.project_id)
+    enforce_principal_scope(principal, user_id=user_id, project_id=project_id)
     session_id = normalize_optional_string(payload.session_id)
 
     try:
