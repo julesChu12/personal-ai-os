@@ -24,7 +24,7 @@
 | 长期记忆 | 已完成基础版 | DB、Qdrant、Obsidian 写入，支持 update-or-create 与检索失败降级 |
 | 检索质量评估 | 已完成规格收尾 | 已有离线 fixture 和 Qdrant 端到端评估脚本，支持命中率阈值、稳定 JSON schema 和失败退出码 |
 | Tool Registry | 已完成 N4 写工具白名单 | `file.read_text`、`file.write_text`、`obsidian.append_note`、`git.status`、`shell.run_safe`，带 HTTP/MCP adapter 和 ToolRun 审计 |
-| Agent Workflow | 已完成 N3 DAG/有限并行基础版 | 默认 deterministic Planner 保持兼容，`planner_mode=model` 支持模型生成 JSON plan，并强制 schema 校验、DAG 条件跳过、fail-fast、AgentRun 审计 |
+| Agent Workflow | 已完成核心编排基础版 | 默认 deterministic Planner 保持兼容，`planner_mode=model` 支持模型生成 JSON plan，并强制 schema 校验、DAG 条件跳过、fail-fast、AgentRun 审计。注：Planner 和 Executor 核心编排已闭环，但 Researcher、Coder、Memory 等专项 Agent 仍为桩代码 (stub) 待实现。 |
 | Obsidian 同步 | 已完成双向同步基础版 | 支持 dry-run、vault/DB 双向更新、冲突报告、默认非破坏性删除策略和 sync state |
 | CLI | 已完成 N9 基础版 | 支持 chat、memory search、Obsidian import、`agents run`、`agents runs`、JSON 输出和非 2xx 错误码 |
 | 数据库迁移 | 已完成 N10 | Docker API 启动前执行 migration；服务启动时缺少 required tables 会明确失败 |
