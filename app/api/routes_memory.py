@@ -34,8 +34,8 @@ def search(user_id: str, project_id: str, query: str, top_k: int = 5):
 @router.post("/memory/obsidian/import")
 def import_obsidian(user_id: str, project_id: str, db: Session = Depends(get_db)):
     """从本地配置的 Obsidian Vault 导入 Markdown 文件。"""
-    count = ObsidianImporter().import_vault(db, user_id, project_id)
-    return {"imported": count}
+    result = ObsidianImporter().import_vault(db, user_id, project_id)
+    return result.to_dict()
 
 
 @router.post("/memory/obsidian/sync")

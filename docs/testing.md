@@ -149,6 +149,14 @@ OpenAI-compatible `/v1/chat/completions` 的身份解析规则：
 
 新增记忆的向量写入失败时仍保留 DB 和 Obsidian 记录；如果是更新已有记忆，则保留原 DB row 和原 `qdrant_point_id`，避免检索返回旧向量但 DB 已变新的不一致状态。
 
+Obsidian 单向导入使用同一套记忆身份和 `MemoryPipeline.persist()`。导入前建议先执行：
+
+```bash
+python scripts/import_obsidian_vault.py --vault-path ./data/obsidian --user-id jules --project-id personal-ai-os --dry-run --json
+```
+
+报告会区分 `created / updated / unchanged / skipped / failed`，dry-run 不写 DB、Obsidian 或 Qdrant。正式导入仍保持串行执行，便于定位失败文件。
+
 ## Runtime config check
 
 启动服务或发布镜像前，可以先运行静态配置检查：
@@ -459,7 +467,7 @@ GitHub Actions 提供手动 workflow：`.github/workflows/retrieval-quality.yml`
 
 ## 当前回归边界
 
-截至 2026-05-06，`pytest --collect-only -q` 收集到 194 个测试用例，`make ci` 覆盖 compile、pytest 和 migration dry-run；GitHub Actions 额外运行 Docker smoke，其中 `SMOKE_RUN_CHAT=1` 覆盖聊天写入与记忆召回闭环。
+截至 2026-05-06，`pytest --collect-only -q` 收集到 197 个测试用例，`make ci` 覆盖 compile、pytest 和 migration dry-run；GitHub Actions 额外运行 Docker smoke，其中 `SMOKE_RUN_CHAT=1` 覆盖聊天写入与记忆召回闭环。
 
 - OpenAI-compatible 接口：鉴权、模型发现、非流式聊天、流式聊天、消息和记忆持久化；多 API key 支持绑定默认 `user_id/project_id`，请求 metadata 不能越权覆盖绑定 scope。
 - 记忆写入：PostgreSQL 记录、Obsidian 路径、Qdrant point id、向量写入失败降级。
@@ -471,7 +479,7 @@ GitHub Actions 提供手动 workflow：`.github/workflows/retrieval-quality.yml`
 - Scheduler：启动注册、生命周期托管、定时摘要任务行为。
 - Tool/Agent auth：`/tools` 和 `/agents` 共享兼容层 bearer key，绑定 key 会拒绝跨 `user_id/project_id` 的 tool run 或 agent run。
 - Agent workflow：deterministic Planner 保持兼容，模型化 Planner 通过 `planner_mode=model` 生成 JSON plan 后仍强制复用 Tool Registry schema 校验；Executor 通过 Tool Registry 执行，ToolRun 审计记录，AgentRun 任务级审计，unsupported/invalid model plan 不执行工具，多步骤失败短路，DAG 依赖顺序、条件跳过、显式有限并行和 `memory_agent` 结果沉淀均有覆盖。
-- Obsidian import：vault markdown 扫描、隐藏目录跳过、frontmatter 解析、重复导入幂等、文件修改更新和 MemoryPipeline 复用。
+- Obsidian import：vault markdown 扫描、隐藏目录跳过、frontmatter 解析、重复导入幂等、文件修改更新、dry-run、增量报告、失败报告和 MemoryPipeline 复用。
 - CLI：agent run、agent runs scoped 查询、JSON 输出和错误码路径。
 - Docker smoke：运行中 API 的健康检查、模型发现和基础检索接口。
 - End-to-end smoke：可选验证聊天写入和记忆召回闭环。
@@ -496,6 +504,7 @@ N5 / N3 / N4 的新增功能已补齐以下回归覆盖：
 - Executor DAG：plan step id、depends_on、条件跳过、循环依赖拒绝、fail-fast 和 skipped trace 均有测试覆盖。
 - 写类工具：`file.write_text` 拒绝路径逃逸和覆盖已有文件，`obsidian.append_note` 限制在 vault 内，成功与失败都走 ToolRun 审计。
 - Executor parallel：仅显式 `execution_mode=parallel` 时启用，只有 read 工具可进入并行 batch，响应顺序保持 plan 顺序。
+- Obsidian import：首次导入、重复导入、修改更新、dry-run、增量报告和失败报告均有覆盖。
 
 ## 增加测试的规则
 

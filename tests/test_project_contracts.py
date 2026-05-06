@@ -487,7 +487,7 @@ def test_next_stage_spec_and_plan_are_documented():
     assert "- [x] **Step 5: Verify**" in plan
     assert "Coverage audit" not in testing
     assert "覆盖审计" in testing
-    assert "194 个测试用例" in testing
+    assert "197 个测试用例" in testing
     assert "N5 / N3 / N4 的新增功能已补齐以下回归覆盖" in testing
 
 

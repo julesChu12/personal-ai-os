@@ -216,11 +216,13 @@ OBSIDIAN_VAULT_PATH=/data/obsidian
 
 Docker Compose 会把本地 `./data/obsidian` 映射到容器内 `/data/obsidian`。
 
-单向导入已有 vault：
+单向导入已有 vault 时，建议先 dry-run 查看增量报告：
 
 ```bash
-docker compose exec api python scripts/import_obsidian_vault.py --user-id jules --project-id personal-ai-os
+docker compose exec api python scripts/import_obsidian_vault.py --user-id jules --project-id personal-ai-os --dry-run --json
 ```
+
+正式导入会复用 `MemoryPipeline`，输出 `created / updated / unchanged / skipped / failed` 计数；加 `--json` 可得到脚本可消费的明细报告。
 
 双向同步默认先 dry-run，只有显式 `--apply` 才会写入 DB/Qdrant 或 vault 文件。默认删除策略是非破坏性的：缺失文件会报告为 `vault_deleted`，不会自动删除 DB/Qdrant 记录。
 
