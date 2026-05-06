@@ -62,6 +62,8 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    from app.core.provider_errors import ProviderError
+
     logger.error(
         "unhandled request error",
         extra={
@@ -72,14 +74,22 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
             "exception_type": type(exc).__name__,
         },
     )
+
+    if isinstance(exc, ProviderError):
+        message = str(exc)
+        code = "provider_error"
+    else:
+        message = "internal server error"
+        code = "internal_error"
+
     if _is_openai_compat(request):
         return JSONResponse(
             status_code=500,
             content={
                 "error": {
-                    "message": "internal server error",
+                    "message": message,
                     "type": "server_error",
-                    "code": "internal_error",
+                    "code": code,
                 }
             },
             headers=_request_id_headers(request),
@@ -88,8 +98,8 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
         status_code=500,
         content={
             "error": {
-                "code": "internal_error",
-                "message": "internal server error",
+                "code": code,
+                "message": message,
                 "type": "internal_error",
             }
         },

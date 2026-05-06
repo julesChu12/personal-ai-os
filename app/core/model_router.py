@@ -95,7 +95,13 @@ class ModelRouter:
         elif settings.minimax_api_key and settings.minimax_base_url and settings.minimax_model:
             self.provider = "minimax"
             self._minimax_api_key = settings.minimax_api_key
-            self._minimax_base_url = settings.minimax_base_url.rstrip("/")
+            # 自动修复 Base URL，移除冗余后缀
+            url = settings.minimax_base_url.rstrip("/")
+            if url.endswith("/v1/messages"):
+                url = url[:-12]
+            elif url.endswith("/v1"):
+                url = url[:-3]
+            self._minimax_base_url = url.rstrip("/")
             self.model = settings.minimax_model
 
     def chat(self, messages: list[dict], model: str | None = None, **kwargs) -> str:
@@ -135,12 +141,15 @@ class ModelRouter:
                 return str(content_blocks)
 
         if hasattr(self, "_client") and self._client:
-            resp = retry_provider_call(
-                lambda: self._client.chat.completions.create(
+            def call_openai():
+                return self._client.chat.completions.create(
                     model=model,
                     messages=messages,
                     temperature=kwargs.get("temperature", 0.2),
-                ),
+                )
+
+            resp = retry_provider_call(
+                call_openai,
                 attempts=self.provider_retry_attempts,
                 error_message="model provider request failed",
             )

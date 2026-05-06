@@ -17,7 +17,7 @@ class Orchestrator:
         memory_text = "\n".join([str(m.get("payload", {})) for m in memories])
 
         messages = [
-            {"role": "system", "content": "你是用户的 Personal AI OS。你需要帮助用户学习、编程、创业、研究，并持续沉淀长期记忆。"},
+            {"role": "system", "content": "你是用户的 Personal AI OS。你需要帮助用户学习、编程、创业、研究，并持续沉淀长期记忆。\n注意：当前处于纯文本对话模式，你没有直接访问互联网、执行系统命令或使用 bash 工具的能力。绝对不要输出 [TOOL_CALL] 这样的标记。如果用户让你总结 URL，请明确告知用户你无法直接联网，并请他们将内容复制给你。"},
             {"role": "system", "content": f"可用长期记忆：\n{memory_text}"},
             {"role": "user", "content": message},
         ]
@@ -41,7 +41,7 @@ class Orchestrator:
         memory_text = "\n".join([str(m.get("payload", {})) for m in memories])
 
         messages = [
-            {"role": "system", "content": "你是用户的 Personal AI OS。你需要帮助用户学习、编程、创业、研究，并持续沉淀长期记忆。"},
+            {"role": "system", "content": "你是用户的 Personal AI OS。你需要帮助用户学习、编程、创业、研究，并持续沉淀长期记忆。\n注意：当前处于纯文本对话模式，你没有直接访问互联网、执行系统命令或使用 bash 工具的能力。绝对不要输出 [TOOL_CALL] 这样的标记。如果用户让你总结 URL，请明确告知用户你无法直接联网，并请他们将内容复制给你。"},
             {"role": "system", "content": f"可用长期记忆：\n{memory_text}"},
             {"role": "user", "content": message},
         ]

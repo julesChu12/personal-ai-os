@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any, Callable, Optional
 
@@ -48,7 +48,7 @@ def daily_memory_job(
     pipeline = pipeline or MemoryPipeline()
 
     db = db_factory()
-    cutoff = datetime.utcnow() - timedelta(hours=lookback_hours)
+    cutoff = datetime.now(UTC) - timedelta(hours=lookback_hours)
     stats = {
         "sessions_considered": 0,
         "sessions_summarized": 0,

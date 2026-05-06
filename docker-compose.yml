@@ -22,12 +22,19 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./data/obsidian:/data/obsidian
+      - ${OBSIDIAN_HOST_PATH:-./data/obsidian}:/data/obsidian
       - ./:/app
     depends_on:
       - postgres
       - qdrant
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    command: >
+      sh -c 'for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do
+        python scripts/run_migrations.py && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload;
+        echo "waiting for database migrations";
+        sleep 2;
+      done;
+      echo "database migrations failed after retries";
+      exit 1'
 
   postgres:
     image: postgres:16
@@ -57,10 +64,13 @@ services:
     volumes:
       - open_webui_data:/app/backend/data
     environment:
-      - OPENAI_API_BASE_URL=${OPENAI_COMPAT_BASE_URL:-http://host.docker.internal:8000/v1}
+      - OPENAI_API_BASE_URL=${OPENAI_COMPAT_BASE_URL:-http://api:8000/v1}
       - OPENAI_API_KEY=${OPENAI_COMPAT_API_KEY:-EMPTY}
       - WEBUI_AUTH=${WEBUI_AUTH:-false}
-      - HF_ENDPOINT=https://hf-mirror.com
+      - HF_ENDPOINT=${HF_ENDPOINT:-https://hf-mirror.com}
+      - HF_TOKEN=${HF_TOKEN:-}
+      - RAG_EMBEDDING_MODEL=${OPENWEBUI_RAG_EMBEDDING_MODEL:-sentence-transformers/all-MiniLM-L6-v2}
+      - RAG_EMBEDDING_MODEL_AUTO_UPDATE=${OPENWEBUI_RAG_EMBEDDING_MODEL_AUTO_UPDATE:-true}
     depends_on:
       - api
     restart: unless-stopped
