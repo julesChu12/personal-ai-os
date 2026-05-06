@@ -58,7 +58,7 @@ class MemoryPipeline:
                     saved.append(existing)
                     continue
 
-                obsidian_path = self.obsidian.write_memory(user_id, project_id, session_id, normalized)
+                obsidian_path = normalized.obsidian_path or self.obsidian.write_memory(user_id, project_id, session_id, normalized)
                 payload = _build_vector_payload(user_id, project_id, session_id, normalized, obsidian_path)
                 try:
                     point_id = vector_store.upsert_memory(
@@ -90,7 +90,7 @@ class MemoryPipeline:
                 has_changes = True
                 continue
 
-            obsidian_path = self.obsidian.write_memory(user_id, project_id, session_id, normalized)
+            obsidian_path = normalized.obsidian_path or self.obsidian.write_memory(user_id, project_id, session_id, normalized)
             payload = _build_vector_payload(user_id, project_id, session_id, normalized, obsidian_path)
             point_id = None
             try:
@@ -132,6 +132,7 @@ def _normalize_candidate(candidate: MemoryCandidate, identity: dict[str, str]) -
         content=candidate.content,
         tags=candidate.tags,
         importance=candidate.importance,
+        obsidian_path=candidate.obsidian_path,
     )
 
 

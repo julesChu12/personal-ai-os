@@ -7,3 +7,4 @@ class MemoryCandidate(BaseModel):
     content: str
     tags: list[str] = Field(default_factory=list)
     importance: int = 5
+    obsidian_path: str | None = None

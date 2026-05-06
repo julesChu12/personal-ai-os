@@ -18,5 +18,11 @@ def memory_search(query: str, project: str = "personal-ai-os", user: str = "jule
     typer.echo(r.json())
 
 
+@app.command("obsidian-import")
+def obsidian_import(project: str = "personal-ai-os", user: str = "jules"):
+    r = httpx.post(f"{API}/memory/obsidian/import", params={"user_id": user, "project_id": project}, timeout=300)
+    typer.echo(r.json())
+
+
 if __name__ == "__main__":
     app()

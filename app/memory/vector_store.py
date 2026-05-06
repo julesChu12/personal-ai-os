@@ -9,7 +9,10 @@ class VectorStore:
     """Qdrant 向量存储适配器，负责记忆向量写入和范围内检索。"""
 
     def __init__(self) -> None:
-        self.client = QdrantClient(url=settings.qdrant_url)
+        if settings.qdrant_url == ":memory:":
+            self.client = QdrantClient(":memory:")
+        else:
+            self.client = QdrantClient(url=settings.qdrant_url)
         self.collection = settings.qdrant_collection
         self.embedding_provider = build_embedding_provider()
         self.ensure_collection()

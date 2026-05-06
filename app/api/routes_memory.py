@@ -5,6 +5,7 @@ from app.db.database import get_db
 from app.memory.memory_schema import MemoryCandidate
 from app.memory.memory_pipeline import MemoryPipeline
 from app.memory.retriever import Retriever
+from app.memory.obsidian_importer import ObsidianImporter
 
 router = APIRouter()
 
@@ -27,3 +28,10 @@ def ingest(req: MemoryIngestRequest, db: Session = Depends(get_db)):
 def search(user_id: str, project_id: str, query: str, top_k: int = 5):
     """按用户和项目范围检索长期记忆。"""
     return {"results": Retriever().search(user_id, project_id, query, top_k)}
+
+
+@router.post("/memory/obsidian/import")
+def import_obsidian(user_id: str, project_id: str, db: Session = Depends(get_db)):
+    """从本地配置的 Obsidian Vault 导入 Markdown 文件。"""
+    count = ObsidianImporter().import_vault(db, user_id, project_id)
+    return {"imported": count}

@@ -361,6 +361,40 @@ python scripts/evaluate_qdrant_retrieval_quality.py --json
 
 该脚本使用独立的 `user_id` 和 `project_id`，默认均为 `retrieval-quality`，也可以通过 `--user-id` 与 `--project-id` 覆盖。
 
+## Real embedding provider quality regression (N8)
+
+默认情况下，CI 和开发环境使用 `mock` provider 以避免消耗真实 API key。为了确保真实 provider（如 OpenAI、BGE 等）的语义检索质量没有退化，支持手动运行在线质量回归。
+
+运行离线（仅计算 cosine similarity）的真实 provider 回归：
+
+```bash
+EMBEDDING_PROVIDER=openai-compatible \
+EMBEDDING_API_KEY=your_real_key \
+EMBEDDING_BASE_URL=https://api.openai.com/v1 \
+EMBEDDING_MODEL=text-embedding-3-small \
+EMBEDDING_DIMENSION=1536 \
+python scripts/evaluate_retrieval_quality.py --min-hit-rate 0.8
+```
+
+运行 Qdrant 端到端的真实 provider 回归：
+
+```bash
+DATABASE_URL="sqlite:///:memory:" \
+QDRANT_URL="http://127.0.0.1:6333" \
+QDRANT_COLLECTION="personal_ai_os_quality_eval_real" \
+EMBEDDING_PROVIDER=openai-compatible \
+EMBEDDING_API_KEY=your_real_key \
+EMBEDDING_BASE_URL=https://api.openai.com/v1 \
+EMBEDDING_MODEL=text-embedding-3-small \
+EMBEDDING_DIMENSION=1536 \
+python scripts/evaluate_qdrant_retrieval_quality.py --min-hit-rate 0.8
+```
+
+**注意：**
+1. 报告的 JSON 或控制台输出**不会**泄露 API Key。
+2. 建议针对不同的模型使用不同的 `QDRANT_COLLECTION`，因为 Qdrant 集合创建后维度（Dimension）不可更改。
+3. 请根据真实的 Golden Dataset 调整 `--min-hit-rate`，避免误报。
+
 ## 当前回归边界
 
 截至 2026-05-04，`pytest --collect-only -q` 收集到 177 个测试用例，`make ci` 覆盖 compile、pytest 和 migration dry-run；GitHub Actions 额外运行 Docker smoke，其中 `SMOKE_RUN_CHAT=1` 覆盖聊天写入与记忆召回闭环。
