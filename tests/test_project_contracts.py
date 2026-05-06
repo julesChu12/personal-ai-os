@@ -47,6 +47,9 @@ def test_runtime_config_files_document_embedding_provider_contract():
     assert "OPENAI_COMPAT_API_KEY" in env_example
     assert "OPENAI_COMPAT_API_KEY" in compose
     assert "OPENAI_COMPAT_API_KEY" in readme
+    assert "HF_ENDPOINT" in env_example
+    assert "HF_ENDPOINT" in compose
+    assert "OPENWEBUI_RAG_EMBEDDING_MODEL" in env_example
 
 
 def test_contributing_documents_regression_expectations():
@@ -102,6 +105,8 @@ def test_runtime_config_check_script_is_documented():
 
 def test_database_migration_entrypoints_are_documented():
     script = read_text("scripts/run_migrations.py")
+    database = read_text("app/db/database.py")
+    compose = read_text("docker-compose.yml")
     readme = read_text("README.md")
     testing = read_text("docs/testing.md")
     roadmap = read_text("docs/development-roadmap.md")
@@ -112,6 +117,10 @@ def test_database_migration_entrypoints_are_documented():
     assert "schema_migrations" in script
     assert "run_migrations.py" in readme
     assert "run_migrations.py" in testing
+    assert "Run migrations first: python scripts/run_migrations.py" in database
+    assert "python scripts/run_migrations.py && exec uvicorn" in compose
+    assert "应用启动不再自动 `create_all`" in readme
+    assert "应用启动不再调用 `Base.metadata.create_all`" in testing
     assert "Task P0-2" in roadmap
     assert "状态：已完成基础版。" in roadmap
 
@@ -342,6 +351,7 @@ def test_retrieval_quality_evaluation_contract_is_documented():
     assert "retrieval quality" in testing.lower()
     assert "--min-hit-rate 1.0" in testing
     assert "--min-hit-rate 1.0" in readme
+    assert "retrieval-quality.yml" in testing
 
 
 def test_qdrant_retrieval_quality_evaluation_contract_is_documented():
@@ -383,6 +393,39 @@ def test_ci_exposes_docker_smoke_job():
     assert "docker compose down -v" in workflow
 
 
+def test_manual_retrieval_quality_workflow_is_opt_in():
+    workflow = read_text(".github/workflows/retrieval-quality.yml")
+
+    assert "workflow_dispatch" in workflow
+    assert "provider:" in workflow
+    assert "default: \"mock\"" in workflow
+    assert "secrets.EMBEDDING_API_KEY" in workflow
+    assert "scripts/evaluate_retrieval_quality.py" in workflow
+    assert "scripts/evaluate_qdrant_retrieval_quality.py" in workflow
+
+
+def test_cli_and_obsidian_entrypoints_are_documented():
+    cli = read_text("app/cli/main.py")
+    cli_tests = read_text("tests/test_cli.py")
+    import_script = read_text("scripts/import_obsidian_vault.py")
+    sync_script = read_text("scripts/sync_obsidian_vault.py")
+    readme = read_text("README.md")
+    testing = read_text("docs/testing.md")
+
+    assert 'agents_app.command("runs")' in cli
+    assert 'agents_app.command("list-runs", hidden=True)' in cli
+    assert "tests/test_cli.py" in testing
+    assert "agent_run_id" in cli_tests
+    assert "ObsidianImporter" in import_script
+    assert "obsidian-sync" in cli
+    assert "ObsidianSyncEngine" in sync_script
+    assert "scripts/sync_obsidian_vault.py" in readme
+    assert "scripts/sync_obsidian_vault.py" in testing
+    assert "tests/test_obsidian_sync.py" in testing
+    assert "scripts/import_obsidian_vault.py" in readme
+    assert "scripts/import_obsidian_vault.py" in testing
+
+
 def test_open_source_readiness_document_tracks_release_blockers():
     text = read_text("docs/open-source-readiness.md")
 
@@ -401,12 +444,13 @@ def test_readme_documents_current_progress_and_next_stage():
     readme = read_text("README.md")
 
     assert "## 当前项目进度" in readme
-    assert "整体进度约为 85%" in readme
+    assert "整体进度约为 90%" in readme
     assert "当前阶段目标" in readme
     assert "N1" in readme
     assert "N2" in readme
     assert "N7" in readme
     assert "next-stage-execution-spec.md" in readme
+    assert "2026-05-06-obsidian-bidirectional-sync-spec.md" in readme
 
 
 def test_next_stage_spec_and_plan_are_documented():
@@ -428,6 +472,11 @@ def test_next_stage_spec_and_plan_are_documented():
     assert "| N3a Executor 条件分支与顺序 DAG | P1 | 已完成 |" in roadmap
     assert "| N4 写类工具白名单 | P1 | 已完成 |" in roadmap
     assert "| N3b Executor 有限并行 | P2 | 已完成 |" in roadmap
+    assert "| N6 Obsidian 单向导入 | P2 | 已完成 |" in roadmap
+    assert "| N11 Obsidian 双向同步基础版 | P2 | 已完成 |" in roadmap
+    assert "| N8 真实 embedding 在线质量回归 | P2 | 已完成 |" in roadmap
+    assert "| N9 CLI 升级 | P3 | 已完成 |" in roadmap
+    assert "| N10 移除 `create_all` 兼容路径 | P3 | 已完成 |" in roadmap
     assert "| N1 | retrieval-quality-foundation 规格收尾验证 | P0 | 0.5-1 天 | 已完成 |" in spec
     assert "| N2 | Planner 模型化：受控生成结构化 plan | P0 | 2-3 天 | 已完成 |" in spec
     assert "| N7 | 多 API Key 与 user/project 绑定 | P1 | 2 天 | 已完成 |" in spec
@@ -438,5 +487,28 @@ def test_next_stage_spec_and_plan_are_documented():
     assert "- [x] **Step 5: Verify**" in plan
     assert "Coverage audit" not in testing
     assert "覆盖审计" in testing
-    assert "177 个测试用例" in testing
+    assert "194 个测试用例" in testing
     assert "N5 / N3 / N4 的新增功能已补齐以下回归覆盖" in testing
+
+
+def test_obsidian_bidirectional_sync_contract_is_documented():
+    models = read_text("app/db/models.py")
+    migration = read_text("app/db/migrations/versions/v0004_obsidian_sync_states.py")
+    sync_engine = read_text("app/memory/obsidian_sync.py")
+    routes = read_text("app/api/routes_memory.py")
+    cli = read_text("app/cli/main.py")
+    spec = read_text("docs/superpowers/specs/2026-05-06-obsidian-bidirectional-sync-spec.md")
+    testing = read_text("docs/testing.md")
+
+    assert "class ObsidianSyncState" in models
+    assert "0004_obsidian_sync_states" in migration
+    assert "class ObsidianSyncEngine" in sync_engine
+    assert "def dry_run" in sync_engine
+    assert "def apply" in sync_engine
+    assert "both_changed" in sync_engine
+    assert "vault_deleted" in sync_engine
+    assert "/memory/obsidian/sync" in routes
+    assert "obsidian-sync" in cli
+    assert "Dry-run first" in spec
+    assert "Safe deletion policy" in spec
+    assert "tests/test_obsidian_sync.py" in testing

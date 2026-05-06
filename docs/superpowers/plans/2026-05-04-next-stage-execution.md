@@ -245,23 +245,23 @@ Run agent workflow tests and full `make ci`.
 - Modify: `docs/testing.md`
 - Modify: `README.md`
 
-- [ ] **Step 1: Add importer fixture tests**
+- [x] **Step 1: Add importer fixture tests**
 
 Cover first import, repeat import, and modified file update.
 
-- [ ] **Step 2: Implement markdown scanner**
+- [x] **Step 2: Implement markdown scanner**
 
 Read only configured vault path.
 
-- [ ] **Step 3: Map files to MemoryCandidate**
+- [x] **Step 3: Map files to MemoryCandidate**
 
 Use deterministic identity and content hash.
 
-- [ ] **Step 4: Reuse MemoryPipeline**
+- [x] **Step 4: Reuse MemoryPipeline**
 
 Do not add parallel persistence logic.
 
-- [ ] **Step 5: Verify**
+- [x] **Step 5: Verify**
 
 Run importer tests, memory tests, and full `make ci`.
 
@@ -273,19 +273,19 @@ Run importer tests, memory tests, and full `make ci`.
 - Create or modify: `.github/workflows/retrieval-quality.yml`
 - Modify: `docs/testing.md`
 
-- [ ] **Step 1: Keep default CI mock-only**
+- [x] **Step 1: Keep default CI mock-only**
 
 Do not require secrets for normal push CI.
 
-- [ ] **Step 2: Add manual workflow or documented command**
+- [x] **Step 2: Add manual workflow or documented command**
 
 Use `workflow_dispatch` if adding GitHub Actions.
 
-- [ ] **Step 3: Redact provider details**
+- [x] **Step 3: Redact provider details**
 
 Reports must not include API keys.
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
 Run mock mode locally and confirm manual path is opt-in.
 
@@ -297,23 +297,23 @@ Run mock mode locally and confirm manual path is opt-in.
 - Modify: `README.md`
 - Modify: `docs/testing.md`
 
-- [ ] **Step 1: Add CLI tests**
+- [x] **Step 1: Add CLI tests**
 
 Use HTTP stubs or monkeypatch `httpx`.
 
-- [ ] **Step 2: Add `agents run`**
+- [x] **Step 2: Add `agents run`**
 
 Print answer and agent_run_id.
 
-- [ ] **Step 3: Add `agents runs`**
+- [x] **Step 3: Add `agents runs`**
 
 Require user/project scope.
 
-- [ ] **Step 4: Add `--json` and error codes**
+- [x] **Step 4: Add `--json` and error codes**
 
 Non-2xx responses exit non-zero.
 
-- [ ] **Step 5: Verify**
+- [x] **Step 5: Verify**
 
 Run CLI tests and full `make ci`.
 
@@ -327,22 +327,22 @@ Run CLI tests and full `make ci`.
 - Modify: `README.md`
 - Modify: `docs/testing.md`
 
-- [ ] **Step 1: Add failing startup test**
+- [x] **Step 1: Add failing startup test**
 
 Service should fail clearly when schema is missing and migrations were not run.
 
-- [ ] **Step 2: Remove startup `create_all`**
+- [x] **Step 2: Remove startup `create_all`**
 
 Keep migration runner as the only schema creation path.
 
-- [ ] **Step 3: Update Docker/startup docs**
+- [x] **Step 3: Update Docker/startup docs**
 
 Document migration-first flow.
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
 Run full `make ci` and Docker smoke.
 
 ## Handoff
 
-N1, N2, N7, N5, N3a, N4, and N3b are complete. Next task candidates are N6 Obsidian 单向导入, N8 真实 embedding 在线质量回归, N9 CLI 升级, and N10 移除 `create_all` 兼容路径.
+N1, N2, N7, N5, N3a, N4, N3b, N6, N8, N9, and N10 are complete. Next task candidates should come from the post-P4 backlog: Obsidian 双向同步、最终用户 UI 外壳、真实用户数据治理策略、以及更完整的部署/发布硬化。
