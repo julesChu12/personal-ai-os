@@ -132,7 +132,7 @@ def _normalize_candidate(candidate: MemoryCandidate, identity: dict[str, str]) -
         content=candidate.content,
         tags=candidate.tags,
         importance=candidate.importance,
-        obsidian_path=candidate.obsidian_path,
+        obsidian_path=getattr(candidate, "obsidian_path", None),
     )
 
 

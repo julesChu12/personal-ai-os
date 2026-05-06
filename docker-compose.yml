@@ -60,6 +60,7 @@ services:
       - OPENAI_API_BASE_URL=${OPENAI_COMPAT_BASE_URL:-http://host.docker.internal:8000/v1}
       - OPENAI_API_KEY=${OPENAI_COMPAT_API_KEY:-EMPTY}
       - WEBUI_AUTH=${WEBUI_AUTH:-false}
+      - HF_ENDPOINT=https://hf-mirror.com
     depends_on:
       - api
     restart: unless-stopped
