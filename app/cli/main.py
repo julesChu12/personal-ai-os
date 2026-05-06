@@ -84,6 +84,30 @@ def obsidian_import(
         typer.secho(f"导入完成！新增/更新数量: {res.get('imported', 0)}", fg=typer.colors.GREEN)
 
 
+@app.command("obsidian-sync")
+def obsidian_sync(
+    project: str = "personal-ai-os",
+    user: str = "jules",
+    apply: bool = typer.Option(False, "--apply", help="应用同步变更；默认仅 dry-run"),
+    json_output: bool = typer.Option(False, "--json", help="输出原始 JSON 响应")
+):
+    """双向同步 Obsidian Vault 和系统记忆库"""
+    res = call_api(
+        "POST",
+        "/memory/obsidian/sync",
+        params={"user_id": user, "project_id": project, "dry_run": not apply},
+        use_json=json_output,
+    )
+    if not json_output:
+        summary = res.get("summary", {})
+        mode = res.get("mode", "dry-run")
+        typer.echo(
+            f"Obsidian sync {mode}: planned={summary.get('planned', 0)} "
+            f"applied={summary.get('applied', 0)} conflicts={summary.get('conflicts', 0)} "
+            f"errors={summary.get('errors', 0)}"
+        )
+
+
 @agents_app.command("run")
 def agents_run(
     task: str,
@@ -114,8 +138,7 @@ def agents_run(
             typer.secho(f"(记忆已保存: {res.get('memory_saved')})", fg=typer.colors.CYAN)
 
 
-@agents_app.command("list-runs")
-def agents_list_runs(
+def _agents_runs(
     project: str = "personal-ai-os",
     user: str = "jules",
     limit: int = 10,
@@ -132,6 +155,10 @@ def agents_list_runs(
             typer.echo(f"ID: {r['id']} | Status: ", nl=False)
             typer.secho(f"{r['status']}", fg=status_color, nl=False)
             typer.echo(f" | Task: {r['task'][:50]}...")
+
+
+agents_app.command("runs")(_agents_runs)
+agents_app.command("list-runs", hidden=True)(_agents_runs)
 
 
 if __name__ == "__main__":

@@ -10,19 +10,21 @@ class Base(DeclarativeBase):
 engine = create_engine(settings.database_url, pool_pre_ping=True)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
+REQUIRED_TABLES = {"messages", "memories", "tool_runs", "agent_runs", "obsidian_sync_states", "schema_migrations"}
+
 
 def init_db() -> None:
-    """初始化数据库。不再自动创建表，而是依赖外部 migration。"""
+    """Validate database schema created by explicit migrations."""
     from sqlalchemy import inspect
     inspector = inspect(engine)
-    if not inspector.has_table("memories"):
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.error("Database table 'memories' not found. Please run migrations first: python scripts/run_migrations.py")
-        # 在开发模式下，如果 DATABASE_URL 是 sqlite :memory:，可能需要特殊处理，
-        # 但既然我们正在移除 create_all，用户应该始终显式运行迁移。
-
-
+    existing = set(inspector.get_table_names())
+    missing = sorted(REQUIRED_TABLES - existing)
+    if missing:
+        missing_list = ", ".join(missing)
+        raise RuntimeError(
+            f"database schema is missing required tables: {missing_list}. "
+            "Run migrations first: python scripts/run_migrations.py"
+        )
 
 def get_db():
     db = SessionLocal()

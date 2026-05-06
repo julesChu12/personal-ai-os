@@ -15,9 +15,9 @@ FRONTMATTER_PATTERN = re.compile(r"^---\n(.*?)\n---\n", re.DOTALL)
 class ObsidianImporter:
     """从 Obsidian Vault 中单向导入 Markdown 文件作为记忆。"""
 
-    def __init__(self, vault_path: str | None = None) -> None:
+    def __init__(self, vault_path: str | None = None, pipeline: MemoryPipeline | None = None) -> None:
         self.vault = Path(vault_path or settings.obsidian_vault_path)
-        self.pipeline = MemoryPipeline()
+        self.pipeline = pipeline or MemoryPipeline()
 
     def import_vault(self, db: Session, user_id: str, project_id: str) -> int:
         """扫描并导入整个 Vault。返回新导入或更新的记忆数量。"""
@@ -32,7 +32,7 @@ class ObsidianImporter:
                 continue
             
             try:
-                candidate = self._parse_file(md_file)
+                candidate = parse_obsidian_file(md_file)
                 if candidate:
                     candidates.append(candidate)
             except Exception as e:
@@ -47,50 +47,65 @@ class ObsidianImporter:
         return len(saved)
 
     def _parse_file(self, path: Path) -> MemoryCandidate | None:
-        content = path.read_text(encoding="utf-8")
-        if not content.strip():
-            return None
+        return parse_obsidian_file(path)
 
-        title = path.stem
-        memory_type = "obsidian_manual"
-        tags = []
-        importance = 5
-        body = content
 
-        match = FRONTMATTER_PATTERN.match(content)
-        if match:
-            frontmatter = match.group(1)
-            body = content[match.end():].strip()
-            
-            # 简单解析 key: value
-            for line in frontmatter.split("\n"):
-                if ":" not in line:
-                    continue
-                key, val = line.split(":", 1)
-                key = key.strip().lower()
-                val = val.strip()
-                
-                if key == "type":
-                    memory_type = val
-                elif key == "importance":
-                    try:
-                        importance = int(val)
-                    except ValueError:
-                        pass
-                elif key == "tags":
-                    # 处理列表 [tag1, tag2] 或多行
-                    tags_match = re.search(r"\[(.*?)\]", val)
-                    if tags_match:
-                        tags = [t.strip() for t in tags_match.group(1).split(",") if t.strip()]
-                    else:
-                        # 暂时不支持复杂的 YAML 列表解析，仅处理单行逗号分隔
-                        tags = [t.strip() for t in val.split(",") if t.strip()]
+def parse_obsidian_file(path: Path) -> MemoryCandidate | None:
+    content = path.read_text(encoding="utf-8")
+    if not content.strip():
+        return None
 
-        return MemoryCandidate(
-            memory_type=memory_type,
-            title=title,
-            content=body,
-            tags=tags,
-            importance=importance,
-            obsidian_path=str(path.absolute())
-        )
+    title = path.stem
+    memory_type = "obsidian_manual"
+    tags = []
+    importance = 5
+    body = content
+
+    match = FRONTMATTER_PATTERN.match(content)
+    if match:
+        frontmatter = match.group(1)
+        body = content[match.end():].strip()
+
+        # 简单解析 key: value
+        for line in frontmatter.split("\n"):
+            if ":" not in line:
+                continue
+            key, val = line.split(":", 1)
+            key = key.strip().lower()
+            val = val.strip().strip("\"'")
+
+            if key == "title":
+                title = val or title
+            elif key == "type":
+                memory_type = val
+            elif key == "importance":
+                try:
+                    importance = int(val)
+                except ValueError:
+                    pass
+            elif key == "tags":
+                # 处理列表 [tag1, tag2] 或多行
+                tags_match = re.search(r"\[(.*?)\]", val)
+                if tags_match:
+                    tags = [t.strip().strip("\"'") for t in tags_match.group(1).split(",") if t.strip()]
+                else:
+                    # 暂时不支持复杂的 YAML 列表解析，仅处理单行逗号分隔
+                    tags = [t.strip().strip("\"'") for t in val.split(",") if t.strip()]
+
+    if title == path.stem:
+        h1 = re.search(r"(?m)^#\s+(.+?)\s*$", body)
+        if h1:
+            title = h1.group(1).strip()
+
+    summary = re.search(r"(?ms)^## Summary\s*\n(.*?)(?:\n##\s|\Z)", body)
+    if summary:
+        body = summary.group(1).strip()
+
+    return MemoryCandidate(
+        memory_type=memory_type,
+        title=title,
+        content=body,
+        tags=tags,
+        importance=importance,
+        obsidian_path=str(path.absolute())
+    )

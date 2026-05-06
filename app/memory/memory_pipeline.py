@@ -1,4 +1,5 @@
 import logging
+from collections.abc import Callable
 
 from sqlalchemy.orm import Session
 from app.core.model_router import ModelRouter
@@ -14,9 +15,10 @@ logger = logging.getLogger(__name__)
 class MemoryPipeline:
     """从对话中提取长期记忆，并写入 Obsidian、Qdrant 和数据库。"""
 
-    def __init__(self) -> None:
+    def __init__(self, vector_store_factory: Callable[[], VectorStore] | None = None) -> None:
         self.router = ModelRouter()
         self.obsidian = ObsidianWriter()
+        self.vector_store_factory = vector_store_factory or VectorStore
 
     def extract_candidates(self, messages: list[dict]) -> list[MemoryCandidate]:
         """调用模型把一组聊天消息压缩成可持久化的记忆候选。"""
@@ -38,7 +40,7 @@ class MemoryPipeline:
 
     def persist(self, db: Session, user_id: str, project_id: str, session_id: str, candidates: list[MemoryCandidate]) -> list[Memory]:
         """持久化记忆；同身份记忆更新，向量写入失败时保留数据库和 Obsidian 记录。"""
-        vector_store = VectorStore()
+        vector_store = self.vector_store_factory()
         saved = []
         has_changes = False
 

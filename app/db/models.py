@@ -34,6 +34,20 @@ class Memory(Base):
     updated_at: Mapped[str] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
+class ObsidianSyncState(Base):
+    __tablename__ = "obsidian_sync_states"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    memory_id: Mapped[int] = mapped_column(Integer, index=True)
+    user_id: Mapped[str] = mapped_column(String(128), index=True)
+    project_id: Mapped[str] = mapped_column(String(128), index=True)
+    obsidian_path: Mapped[str] = mapped_column(Text, index=True)
+    file_hash: Mapped[str] = mapped_column(String(64))
+    memory_hash: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(32), default="ok", index=True)
+    last_synced_at: Mapped[str] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
 class ToolRun(Base):
     __tablename__ = "tool_runs"
 

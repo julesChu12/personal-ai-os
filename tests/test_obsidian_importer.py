@@ -1,20 +1,24 @@
 import pytest
-import os
-import shutil
-from pathlib import Path
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from app.db.database import Base
 from app.db.models import Memory
 from app.memory.obsidian_importer import ObsidianImporter
-from app.config import settings
+from app.memory.memory_pipeline import MemoryPipeline
 
-# 设置测试数据库和向量库
-os.environ["QDRANT_URL"] = ":memory:"
-os.environ["EMBEDDING_PROVIDER"] = "mock"
 
 engine = create_engine("sqlite:///:memory:")
 SessionLocal = sessionmaker(bind=engine)
+
+
+class FakeVectorStore:
+    def upsert_memory(self, text, payload, point_id=None):
+        return point_id or f"point-{payload['title']}"
+
+
+def build_importer(vault_path):
+    pipeline = MemoryPipeline(vector_store_factory=FakeVectorStore)
+    return ObsidianImporter(vault_path=str(vault_path), pipeline=pipeline)
 
 @pytest.fixture
 def db():
@@ -54,7 +58,7 @@ This is note 2 content with tags.""", encoding="utf-8")
 
 def test_obsidian_importer_basic(db, temp_vault):
     # 模拟环境变量中的 vault 路径
-    importer = ObsidianImporter(vault_path=str(temp_vault))
+    importer = build_importer(temp_vault)
     
     count = importer.import_vault(db, "user1", "project1")
     
@@ -82,7 +86,7 @@ def test_obsidian_importer_basic(db, temp_vault):
     assert note2.obsidian_path == str((temp_vault / "note2.md").absolute())
 
 def test_obsidian_importer_idempotency(db, temp_vault):
-    importer = ObsidianImporter(vault_path=str(temp_vault))
+    importer = build_importer(temp_vault)
     
     # 第一次导入
     count1 = importer.import_vault(db, "user1", "project1")

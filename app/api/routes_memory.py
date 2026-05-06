@@ -6,6 +6,7 @@ from app.memory.memory_schema import MemoryCandidate
 from app.memory.memory_pipeline import MemoryPipeline
 from app.memory.retriever import Retriever
 from app.memory.obsidian_importer import ObsidianImporter
+from app.memory.obsidian_sync import ObsidianSyncEngine
 
 router = APIRouter()
 
@@ -35,3 +36,12 @@ def import_obsidian(user_id: str, project_id: str, db: Session = Depends(get_db)
     """从本地配置的 Obsidian Vault 导入 Markdown 文件。"""
     count = ObsidianImporter().import_vault(db, user_id, project_id)
     return {"imported": count}
+
+
+@router.post("/memory/obsidian/sync")
+def sync_obsidian(user_id: str, project_id: str, dry_run: bool = True, db: Session = Depends(get_db)):
+    """双向同步 Obsidian Vault 和系统记忆；默认 dry-run。"""
+    engine = ObsidianSyncEngine()
+    if dry_run:
+        return engine.dry_run(db, user_id, project_id)
+    return engine.apply(db, user_id, project_id)
