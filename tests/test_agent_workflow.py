@@ -63,9 +63,12 @@ def test_agent_workflow_reads_file_and_records_tool_run(tmp_path):
     )
 
     assert result["status"] == "ok"
-    assert result["answer"] == "agent workflow output"
+    assert "Step summary:" in result["answer"]
+    assert "agent workflow output" in result["answer"]
     assert result["agent_trace"][0]["agent"] == "planner"
     assert result["agent_trace"][1]["agent"] == "executor"
+    assert result["agent_trace"][-1]["agent"] == "coder"
+    assert result["agent_trace"][-1]["action"] == "summarize_execution"
     assert result["steps"][0]["tool_name"] == "file.read_text"
     assert result["steps"][0]["status"] == "ok"
     assert result["agent_run_id"] >= 1
@@ -81,7 +84,7 @@ def test_agent_workflow_reads_file_and_records_tool_run(tmp_path):
     assert agent_runs[0].id == result["agent_run_id"]
     assert agent_runs[0].status == "ok"
     assert agent_runs[0].task == "read file note.md"
-    assert agent_runs[0].answer == "agent workflow output"
+    assert agent_runs[0].answer == result["answer"]
     assert agent_runs[0].steps[0]["tool_name"] == "file.read_text"
     assert agent_runs[0].request_id == "req-agent-1"
 
@@ -111,7 +114,7 @@ def test_agent_workflow_executes_valid_structured_plan(tmp_path):
     )
 
     assert result["status"] == "ok"
-    assert result["answer"] == "structured plan output"
+    assert "structured plan output" in result["answer"]
     assert result["agent_trace"][0]["action"] == "validate_plan"
     assert result["steps"][0]["tool_name"] == "file.read_text"
 
@@ -138,7 +141,7 @@ def test_agent_workflow_executes_valid_model_generated_plan(tmp_path):
     )
 
     assert result["status"] == "ok"
-    assert result["answer"] == "model plan output"
+    assert "model plan output" in result["answer"]
     assert result["agent_trace"][0]["action"] == "model_plan"
     assert result["steps"][0]["tool_name"] == "file.read_text"
     assert db.query(ToolRun).count() == 1
@@ -232,7 +235,9 @@ def test_agent_workflow_executes_multi_step_structured_plan(tmp_path):
     )
 
     assert result["status"] == "ok"
-    assert result["answer"] == "first output\nsecond output"
+    assert "Step summary:" in result["answer"]
+    assert "first output" in result["answer"]
+    assert "second output" in result["answer"]
     assert [step["status"] for step in result["steps"]] == ["ok", "ok"]
     assert db.query(ToolRun).count() == 2
 
@@ -272,7 +277,8 @@ def test_agent_workflow_executes_dag_in_dependency_order(tmp_path):
 
     assert result["status"] == "ok"
     assert [step["id"] for step in result["steps"]] == ["first", "second"]
-    assert result["answer"] == "first output\nsecond output"
+    assert "first output" in result["answer"]
+    assert "second output" in result["answer"]
 
 
 def test_agent_workflow_records_condition_skipped_step_without_tool_run(tmp_path):
@@ -311,7 +317,7 @@ def test_agent_workflow_records_condition_skipped_step_without_tool_run(tmp_path
     assert [step["status"] for step in result["steps"]] == ["ok", "skipped"]
     assert result["steps"][1]["run_id"] is None
     assert db.query(ToolRun).count() == 1
-    assert result["agent_trace"][-1]["action"] == "skip_tool"
+    assert any(entry["action"] == "skip_tool" for entry in result["agent_trace"])
 
 
 def test_agent_workflow_parallel_mode_preserves_plan_order(tmp_path):
@@ -344,7 +350,8 @@ def test_agent_workflow_parallel_mode_preserves_plan_order(tmp_path):
 
     assert result["status"] == "ok"
     assert [step["id"] for step in result["steps"]] == ["first", "second"]
-    assert result["answer"] == "first output\nsecond output"
+    assert "first output" in result["answer"]
+    assert "second output" in result["answer"]
 
 
 def test_agent_workflow_parallel_mode_keeps_guarded_tools_sequential(tmp_path):
@@ -478,6 +485,12 @@ def test_agent_workflow_persists_successful_agent_result_when_requested(tmp_path
 
     assert result["status"] == "ok"
     assert result["memory_saved"] == 1
+    assert result["agent_trace"][-1] == {
+        "agent": "memory_agent",
+        "action": "persist_result",
+        "status": "saved",
+        "memory_saved": 1,
+    }
     assert len(memory_pipeline.persist_calls) == 1
     call = memory_pipeline.persist_calls[0]
     assert call["user_id"] == "u1"
@@ -520,6 +533,12 @@ def test_agent_workflow_does_not_persist_failed_agent_result(tmp_path):
 
     assert result["status"] == "error"
     assert result["memory_saved"] == 0
+    assert result["agent_trace"][-1] == {
+        "agent": "memory_agent",
+        "action": "persist_result",
+        "status": "skipped_failed_workflow",
+        "memory_saved": 0,
+    }
     assert memory_pipeline.persist_calls == []
 
 

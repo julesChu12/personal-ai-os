@@ -95,6 +95,24 @@ def _extract_stream_content(chunk: str) -> str:
     return "".join(contents)
 
 
+def _estimate_tokens(text: str) -> int:
+    """Small deterministic fallback when providers do not return usage."""
+    normalized = text.strip()
+    if not normalized:
+        return 0
+    return max(1, (len(normalized) + 3) // 4)
+
+
+def _estimate_usage(prompt: str, completion: str) -> dict[str, int]:
+    prompt_tokens = _estimate_tokens(prompt)
+    completion_tokens = _estimate_tokens(completion)
+    return {
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "total_tokens": prompt_tokens + completion_tokens,
+    }
+
+
 @router.get("/v1/models")
 def list_models(authorization: str | None = Header(default=None)):
     _check_authorization(authorization)
@@ -175,6 +193,7 @@ async def chat_completions(
     result = Orchestrator().chat(identity.user_id, identity.project_id, identity.session_id, prompt)
     persist_chat_exchange(db, identity.user_id, identity.project_id, identity.session_id, user_message, result["answer"])
     created = int(time.time())
+    usage = _estimate_usage(prompt, result["answer"])
 
     return {
         "id": f"chatcmpl-{uuid.uuid4().hex}",
@@ -191,9 +210,5 @@ async def chat_completions(
                 "finish_reason": "stop",
             }
         ],
-        "usage": {
-            "prompt_tokens": 0,
-            "completion_tokens": 0,
-            "total_tokens": 0,
-        },
+        "usage": usage,
     }

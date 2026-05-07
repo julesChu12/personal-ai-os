@@ -101,8 +101,9 @@ def test_agents_run_endpoint_executes_minimal_workflow(tmp_path):
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "ok"
-    assert payload["answer"] == "route agent output"
-    assert [entry["agent"] for entry in payload["agent_trace"]] == ["planner", "executor"]
+    assert "route agent output" in payload["answer"]
+    assert "Step summary:" in payload["answer"]
+    assert [entry["agent"] for entry in payload["agent_trace"]] == ["planner", "executor", "coder"]
     assert payload["steps"][0]["tool_name"] == "file.read_text"
     assert payload["steps"][0]["run_id"] >= 1
 
@@ -136,7 +137,7 @@ def test_agents_run_endpoint_accepts_structured_plan(tmp_path):
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "ok"
-    assert payload["answer"] == "structured route output"
+    assert "structured route output" in payload["answer"]
     assert payload["agent_trace"][0]["action"] == "validate_plan"
 
 
@@ -180,7 +181,8 @@ def test_agents_run_endpoint_accepts_parallel_execution_mode(tmp_path):
     payload = response.json()
     assert payload["status"] == "ok"
     assert [step["id"] for step in payload["steps"]] == ["first", "second"]
-    assert payload["answer"] == "first route output\nsecond route output"
+    assert "first route output" in payload["answer"]
+    assert "second route output" in payload["answer"]
 
 
 def test_agents_run_endpoint_accepts_model_planner_mode(tmp_path):
@@ -209,7 +211,7 @@ def test_agents_run_endpoint_accepts_model_planner_mode(tmp_path):
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "ok"
-    assert payload["answer"] == "model route output"
+    assert "model route output" in payload["answer"]
     assert payload["agent_trace"][0]["action"] == "model_plan"
 
 
@@ -405,6 +407,8 @@ def test_agents_run_endpoint_persists_result_when_memory_agent_requested(tmp_pat
     payload = response.json()
     assert payload["status"] == "ok"
     assert payload["memory_saved"] == 1
+    assert payload["agent_trace"][-1]["agent"] == "memory_agent"
+    assert payload["agent_trace"][-1]["status"] == "saved"
 
     calls = client.app.state.memory_pipeline.persist_calls
     assert len(calls) == 1
@@ -473,7 +477,7 @@ def test_agents_run_endpoint_records_agent_run_and_lists_by_scope(tmp_path):
     assert [run["id"] for run in payload["runs"]] == [second_payload["agent_run_id"], first_payload["agent_run_id"]]
     assert payload["runs"][0]["task"] == "read file second.md"
     assert payload["runs"][0]["status"] == "ok"
-    assert payload["runs"][0]["answer"] == "second route run"
+    assert "second route run" in payload["runs"][0]["answer"]
     assert payload["runs"][0]["request_id"] == "req-agent-run-second"
     assert payload["runs"][0]["steps"][0]["tool_name"] == "file.read_text"
     assert all(run["user_id"] == "u1" and run["project_id"] == "p1" for run in payload["runs"])

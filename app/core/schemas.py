@@ -23,6 +23,9 @@ class TaskRequest(BaseModel):
     session_id: str
     task: str
     agents: list[str] = Field(default_factory=list)
+    planner_mode: str = "deterministic"
+    execution_mode: str = "sequential"
+    plan: dict[str, Any] | None = None
 
 
 class MemoryIngestRequest(BaseModel):

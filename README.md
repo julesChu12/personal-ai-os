@@ -13,24 +13,25 @@
 
 ## 当前项目进度
 
-当前仓库定位是可克隆、可二次开发的 Personal AI OS 模板，不是面向最终用户的一体化产品。当前阶段已经完成本地运行、Open WebUI 接入、长期记忆基础闭环、P0/P1/P2/P3 基础版、P4/N-series 收口任务、开源工程化和 GitHub CI 发布入口。
+当前仓库定位是可克隆、可二次开发的 Personal AI OS 模板，不是面向最终用户的一体化产品。当前阶段已经完成本地运行、Open WebUI 接入、长期记忆基础闭环、P0/P1/P2/P3 基础版、P4/N-series 收口任务、开源工程化、GitHub CI 发布入口，以及模块 95% 提升第一轮收口。
 
 按完整 Personal AI OS 愿景估算，整体进度约为 90%。按当前阶段目标“可本地长期运行、可开源协作、基础服务可信、工具调用可控可审计、最小 Agent 闭环可验证”估算，进度约为 100%。
 
 | 模块 | 当前状态 | 摘要 |
 | --- | --- | --- |
 | 本地服务底座 | 已完成基础版 | FastAPI、PostgreSQL、Qdrant、Open WebUI、Scheduler 可通过 Docker Compose 运行 |
-| OpenAI-compatible 接入 | 已完成基础版 | `/v1/models`、`/v1/chat/completions`、流式响应、metadata 身份语义 |
-| 长期记忆 | 已完成基础版 | DB、Qdrant、Obsidian 写入，支持 update-or-create 与检索失败降级 |
+| OpenAI-compatible 接入 | 已完成 95% 模板版 | `/v1/models`、`/v1/chat/completions`、流式响应、metadata 身份语义，非流式响应提供稳定 usage 估算 |
+| 长期记忆 | 已完成 95% 模板版 | DB、Qdrant、Obsidian 写入，支持 update-or-create、检索失败降级和 Qdrant payload 治理 metadata |
 | 检索质量评估 | 已完成规格收尾 | 已有离线 fixture 和 Qdrant 端到端评估脚本，支持命中率阈值、稳定 JSON schema 和失败退出码 |
 | Tool Registry | 已完成 N4 写工具白名单 | `file.read_text`、`file.write_text`、`obsidian.append_note`、`git.status`、`shell.run_safe`，带 HTTP/MCP adapter 和 ToolRun 审计 |
-| Agent Workflow | 已完成核心编排基础版 | 默认 deterministic Planner 保持兼容，`planner_mode=model` 支持模型生成 JSON plan，并强制 schema 校验、DAG 条件跳过、fail-fast、AgentRun 审计。注：Planner 和 Executor 核心编排已闭环，但 Researcher、Coder、Memory 等专项 Agent 仍为桩代码 (stub) 待实现。 |
+| Agent Workflow | 已完成 95% 模板版 | `/agents/run` 和兼容 `/task` 统一走 AgentWorkflow；默认 deterministic Planner 保持兼容，`planner_mode=model` 支持模型生成 JSON plan，并强制 schema 校验、DAG 条件跳过、fail-fast、AgentRun 审计；Researcher/Coder/Memory Agent 已具备基础结构化能力 |
 | Obsidian 同步 | 已完成双向同步基础版 | 支持 dry-run、vault/DB 双向更新、冲突报告、默认非破坏性删除策略和 sync state |
-| CLI | 已完成 N9 基础版 | 支持 chat、memory search、Obsidian import、`agents run`、`agents runs`、JSON 输出和非 2xx 错误码 |
+| Scheduler | 已完成 95% 模板版 | 支持每日摘要任务和 `/scheduler/status` 只读运行状态 |
+| CLI | 已完成 95% 模板版 | 支持 chat、memory search、Obsidian import、`agents run`、`agents runs`、JSON 输出和非 2xx 错误码 |
 | 数据库迁移 | 已完成 N10 | Docker API 启动前执行 migration；服务启动时缺少 required tables 会明确失败 |
 | 开源工程化 | 已完成基础版 | Apache-2.0、SECURITY、CODE_OF_CONDUCT、package metadata、GitHub Actions CI/smoke |
 
-当前明确暂缓项是实时文件监听、自动冲突合并、面向最终用户的一体化 UI 外壳，以及更完整的真实用户数据治理策略。
+模块 95% 提升 SPEC 和计划见 `docs/superpowers/specs/2026-05-07-module-95-completion-spec.md` 与 `docs/superpowers/plans/2026-05-07-module-95-completion-plan.md`。当前明确暂缓项是实时文件监听、自动冲突合并、面向最终用户的一体化 UI 外壳，以及更完整的真实用户数据治理策略。
 
 ## 架构图
 
@@ -98,9 +99,10 @@ curl http://127.0.0.1:8000/health
 curl http://localhost:8000/diagnostics
 # 或：
 curl http://127.0.0.1:8000/diagnostics
+curl http://127.0.0.1:8000/scheduler/status
 ```
 
-`/health` 只用于轻量存活检查；`/diagnostics` 用于排障，会检查 database、Qdrant、embedding provider、model provider 和 scheduler。返回状态为 `ok`、`degraded` 或 `error`，不会返回 API key、数据库密码等敏感值。
+`/health` 只用于轻量存活检查；`/diagnostics` 用于排障，会检查 database、Qdrant、embedding provider、model provider 和 scheduler。`/scheduler/status` 返回 APScheduler 的只读运行状态和 job 列表。诊断返回状态为 `ok`、`degraded` 或 `error`，不会返回 API key、数据库密码等敏感值。
 
 启动前配置检查：
 

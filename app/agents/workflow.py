@@ -4,11 +4,12 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.agents.coder import CoderAgent
 from app.agents.executor import AgentStepResult, ExecutorAgent
+from app.agents.memory_agent import MemoryAgentAgent
 from app.agents.planner import AgentPlanValidationError, PlannerAgent, validate_agent_plan
 from app.agents.run_store import record_agent_run
 from app.memory.memory_pipeline import MemoryPipeline
-from app.memory.memory_schema import MemoryCandidate
 from app.tools.audit import record_tool_run
 from app.tools.registry import ToolRegistry, build_default_tool_registry
 
@@ -23,11 +24,15 @@ class AgentWorkflow:
         *,
         planner: PlannerAgent | None = None,
         executor: ExecutorAgent | None = None,
+        coder: CoderAgent | None = None,
+        memory_agent: MemoryAgentAgent | None = None,
         registry: ToolRegistry | None = None,
         memory_pipeline: MemoryPipeline | None = None,
     ) -> None:
         self.planner = planner or PlannerAgent()
         self.executor = executor or ExecutorAgent()
+        self.coder = coder or CoderAgent()
+        self.memory_agent = memory_agent or MemoryAgentAgent()
         self.registry = registry or build_default_tool_registry()
         self.memory_pipeline = memory_pipeline
 
@@ -114,9 +119,14 @@ class AgentWorkflow:
             )
 
         failed = next((step for step in step_results if step.status == "error"), None)
-        answer = _build_answer(step_results)
+        if failed is None:
+            answer = self.coder.summarize_execution(task, step_results)
+            trace.append({"agent": "coder", "action": "summarize_execution"})
+        else:
+            answer = _build_answer(step_results)
         memory_saved = _persist_agent_result(
             self.memory_pipeline,
+            self.memory_agent,
             db=db,
             user_id=user_id,
             project_id=project_id,
@@ -125,6 +135,15 @@ class AgentWorkflow:
             answer=answer,
             should_persist=persist_agent_result and failed is None,
         )
+        if persist_agent_result:
+            trace.append(
+                {
+                    "agent": "memory_agent",
+                    "action": "persist_result",
+                    "status": _memory_trace_status(memory_saved, failed),
+                    "memory_saved": memory_saved,
+                }
+            )
         response = {
             "status": "error" if failed else "ok",
             "answer": answer,
@@ -415,8 +434,17 @@ def _build_answer(step_results: list[AgentStepResult]) -> str:
     return "\n".join(errors)
 
 
+def _memory_trace_status(memory_saved: int, failed: AgentStepResult | None) -> str:
+    if failed is not None:
+        return "skipped_failed_workflow"
+    if memory_saved > 0:
+        return "saved"
+    return "skipped_empty_or_unavailable"
+
+
 def _persist_agent_result(
     memory_pipeline: MemoryPipeline | None,
+    memory_agent: MemoryAgentAgent,
     *,
     db: Session,
     user_id: str,
@@ -430,7 +458,9 @@ def _persist_agent_result(
         return 0
 
     pipeline = memory_pipeline or MemoryPipeline()
-    candidate = _build_agent_result_memory(task, answer)
+    candidate = memory_agent.build_result_memory(task, answer, success=True)
+    if candidate is None:
+        return 0
     try:
         saved = pipeline.persist(db, user_id, project_id, session_id, [candidate])
     except Exception as exc:
@@ -443,15 +473,3 @@ def _persist_agent_result(
         )
         return 0
     return len(saved)
-
-
-def _build_agent_result_memory(task: str, answer: str) -> MemoryCandidate:
-    normalized_task = " ".join(task.strip().split()) or "agent task"
-    title_task = normalized_task[:80].rstrip()
-    return MemoryCandidate(
-        memory_type="agent_result",
-        title=f"Agent result: {title_task}",
-        content=f"Task: {normalized_task}\n\nResult:\n{answer.strip()}",
-        tags=["personal-ai-os", "agent"],
-        importance=6,
-    )

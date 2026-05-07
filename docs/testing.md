@@ -252,6 +252,8 @@ OpenAI-compatible model provider 和 embedding provider 只使用项目级 `retr
 
 provider 错误响应和日志只能暴露稳定错误摘要，不得拼接 provider 原始异常、HTTP response body、API key 或完整连接串。相关回归由 `tests/test_provider_reliability.py`、`tests/test_errors.py` 和 `tests/test_request_context.py` 覆盖。
 
+OpenAI-compatible 非流式响应在 provider 未提供真实 usage 时会使用本地 deterministic 估算，保证 `prompt_tokens`、`completion_tokens` 和 `total_tokens` 可被客户端稳定消费。相关回归在 `tests/test_openai_compat.py`。
+
 ## Tool adapter
 
 P2 工具层的回归重点是工具边界稳定、危险能力默认受控、调用可审计：
@@ -274,9 +276,12 @@ P3-1 最小 Agent 工作流的回归重点是 Planner / Executor 不绕过 Tool 
 
 - `tests/test_agent_workflow.py` 覆盖 `AgentWorkflow` 能把 `read file <path>` 规划为 `file.read_text`，执行后写入 `ToolRun` 审计记录。
 - `tests/test_agents_route.py` 覆盖 `POST /agents/run` 的最小 API 合同和 unsupported task 降级。
+- `tests/test_task_route.py` 覆盖兼容入口 `POST /task` 也走同一套 AgentWorkflow、ToolRun 和 AgentRun 审计，并支持显式结构化 plan 与有限并行模式。
 - `tests/test_project_contracts.py` 锁定 Planner、Executor、Workflow 和文档状态，避免后续改动绕开工具层。
 
 当前 Planner 只支持 `read file <path>`、`pwd` / `show cwd`、`git status` 三类确定性任务。任意 shell、删除、写文件等能力不会被规划，unsupported task 返回 `status=error` 且不写 tool run。
+
+Researcher、Coder、Memory Agent 不再是纯回显 stub。`tests/test_agent_specialists.py` 覆盖 Researcher 的受控 notes、Coder 的工具结果摘要和 Memory Agent 的成功结果候选构造。AgentWorkflow 成功路径会记录 Coder 摘要步骤，失败路径仍保持 fail-fast。
 
 ## Structured Agent Plan
 
@@ -340,7 +345,17 @@ python -m app.cli.main
 - `agents run`
 - `agents runs`
 
-`agents run` 会打印 `agent_run_id`，`agents runs` 按 `user_id + project_id` scope 查询历史 run。所有命令支持 `--json` 时会转发原始 JSON，HTTP 非 2xx 或网络错误会以非零退出码结束。`tests/test_cli.py` 使用 HTTP stub 覆盖命令参数、JSON 输出和 scoped history 查询。
+`chat` 普通输出读取 API 返回的 `answer` 字段，`--json` 模式转发原始 JSON。`agents run` 会打印 `agent_run_id`，`agents runs` 按 `user_id + project_id` scope 查询历史 run。所有命令支持 `--json` 时会转发原始 JSON，HTTP 非 2xx 或网络错误会以非零退出码结束。`tests/test_cli.py` 使用 HTTP stub 覆盖命令参数、JSON 输出和 scoped history 查询。
+
+## Scheduler status
+
+调度器除 `/diagnostics` 外，还提供只读状态接口：
+
+```bash
+curl http://127.0.0.1:8000/scheduler/status
+```
+
+响应包含 `running` 和 `jobs`，job 项包含 `id`、`next_run_time` 和 `trigger`。`tests/test_scheduler_status.py` 覆盖 scheduler 缺失、job 序列化和路由读取 app state。
 
 ## Obsidian import and sync
 
@@ -352,6 +367,8 @@ python -m app.cli.main obsidian-import --user jules --project personal-ai-os
 ```
 
 导入器只扫描配置 vault 内的 markdown 文件，跳过隐藏目录，解析简单 YAML frontmatter，并复用 `MemoryPipeline.persist()` 的 update-or-create 语义。重复运行不会重复写入；文件内容变化会更新同身份记忆；文件删除不会自动删除 DB/Qdrant 记录。`tests/test_obsidian_importer.py` 使用 fake vector store 隔离 Qdrant，避免单元测试依赖外部服务。
+
+`MemoryPipeline` 写入 Qdrant payload 时会附带 `source`、`governance_version` 和 `quality_score`，用于后续记忆治理和检索解释。相关回归在 `tests/test_memory_pipeline.py`。
 
 Obsidian 双向同步通过 `/memory/obsidian/sync`、`obsidian-sync` 和 `scripts/sync_obsidian_vault.py` 暴露。默认 dry-run，只返回 `summary/planned/applied/conflicts/skipped/errors` 报告；显式 `--apply` 才会应用变更。同步状态由 `obsidian_sync_states` 记录上次同步时的 file/memory hash，用来区分 `unchanged`、`vault_only`、`db_only`、`vault_changed`、`db_changed`、`both_changed`、`vault_deleted` 和 `path_missing`。默认删除策略非破坏性：删除 vault 文件只报告，不会删除 DB/Qdrant。`tests/test_obsidian_sync.py` 使用临时 vault 和 fake vector store 覆盖 dry-run、双向 apply、冲突、删除默认策略和路径边界。
 

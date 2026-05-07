@@ -6,6 +6,40 @@ from app.cli import main as cli_main
 runner = CliRunner()
 
 
+def test_chat_prints_answer_field(monkeypatch):
+    calls = []
+
+    def fake_call_api(method, path, params=None, json_data=None, use_json=False):
+        calls.append({"method": method, "path": path, "params": params, "json_data": json_data, "use_json": use_json})
+        return {"answer": "hello from api"}
+
+    monkeypatch.setattr(cli_main, "call_api", fake_call_api)
+
+    result = runner.invoke(cli_main.app, ["chat", "hello", "--user", "alice", "--project", "proj"])
+
+    assert result.exit_code == 0
+    assert "AI: hello from api" in result.output
+    assert calls[0]["method"] == "POST"
+    assert calls[0]["path"] == "/chat"
+    assert calls[0]["json_data"]["message"] == "hello"
+    assert calls[0]["json_data"]["user_id"] == "alice"
+    assert calls[0]["json_data"]["project_id"] == "proj"
+
+
+def test_chat_json_output_is_forwarded(monkeypatch):
+    calls = []
+
+    def fake_call_api(method, path, params=None, json_data=None, use_json=False):
+        calls.append({"method": method, "path": path, "params": params, "json_data": json_data, "use_json": use_json})
+
+    monkeypatch.setattr(cli_main, "call_api", fake_call_api)
+
+    result = runner.invoke(cli_main.app, ["chat", "hello", "--json"])
+
+    assert result.exit_code == 0
+    assert calls[0]["use_json"] is True
+
+
 def test_agents_run_prints_agent_run_id(monkeypatch):
     calls = []
 

@@ -51,7 +51,7 @@ def chat(
     payload = {"user_id": user, "project_id": project, "session_id": session, "message": message, "mode": "chat"}
     res = call_api("POST", "/chat", json_data=payload, use_json=json_output)
     if not json_output:
-        typer.echo(f"AI: {res.get('message', '')}")
+        typer.echo(f"AI: {res.get('answer', res.get('message', ''))}")
 
 
 @app.command("memory-search")

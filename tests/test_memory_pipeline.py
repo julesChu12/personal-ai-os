@@ -246,6 +246,9 @@ class MemoryPipelinePersistenceTests(unittest.TestCase):
                         "title": "会话沉淀",
                         "tags": ["memory", "updated"],
                         "obsidian_path": "/vault/p1/new-session.md",
+                        "source": "chat",
+                        "governance_version": "memory-governance-v1",
+                        "quality_score": 0.7,
                     },
                     "point_id": "existing-point",
                 }
@@ -323,6 +326,25 @@ class MemoryPipelinePersistenceTests(unittest.TestCase):
         self.assertEqual(existing.title, "会话沉淀")
         self.assertEqual(FakeVectorStoreSuccess.calls[0]["payload"]["memory_type"], "learning")
         self.assertEqual(FakeVectorStoreSuccess.calls[0]["payload"]["title"], "会话沉淀")
+
+    def test_persist_adds_governance_metadata_to_vector_payload(self):
+        module = load_memory_pipeline_module(self, FakeVectorStoreSuccess)
+        pipeline = module.MemoryPipeline()
+        db = FakeDb()
+        candidate = SimpleNamespace(
+            memory_type="agent_result",
+            title="Agent result",
+            content="summary",
+            tags=["agent"],
+            importance=9,
+        )
+
+        pipeline.persist(db, "u1", "p1", "s1", [candidate])
+
+        payload = FakeVectorStoreSuccess.calls[0]["payload"]
+        self.assertEqual(payload["source"], "agent")
+        self.assertEqual(payload["governance_version"], "memory-governance-v1")
+        self.assertEqual(payload["quality_score"], 0.9)
 
     def test_persist_does_not_update_same_title_from_different_project(self):
         module = load_memory_pipeline_module(self, FakeVectorStoreSuccess)

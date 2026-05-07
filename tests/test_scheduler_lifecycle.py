@@ -134,6 +134,7 @@ class SchedulerLifecycleTests(unittest.TestCase):
             "app.api.routes_agents",
             "app.api.routes_openai_compat",
             "app.api.routes_diagnostics",
+            "app.api.routes_scheduler",
             "app.api.routes_tools",
         ]:
             module = types.ModuleType(name)
@@ -163,7 +164,7 @@ class SchedulerLifecycleTests(unittest.TestCase):
         asyncio.run(run_lifespan())
 
         self.assertEqual(scheduler.shutdown_calls, [False])
-        self.assertEqual(len(main_module.app.routers), 8)
+        self.assertEqual(len(main_module.app.routers), 9)
         self.assertEqual(main_module.app.exception_handlers, [{"exception": "registered", "handler": "handler"}])
         self.assertEqual(len(main_module.app.middlewares), 1)
         self.assertEqual(main_module.app.middlewares[0]["type"], "http")

@@ -1,10 +1,10 @@
 # Personal AI OS Development Roadmap
 
-更新日期：2026-05-06
+更新日期：2026-05-07
 
 ## 当前阶段判断
 
-项目已经完成“本地可用 + Open WebUI 接入 + 长期记忆基础闭环 + P0 基础服务硬化 + P1 运行质量基础版 + P2 工具层基础版 + P3 Agent 执行、审计与记忆沉淀基础 + P4/N-series 收口任务 + Obsidian 双向同步基础版 + 开源工程化基础 + GitHub CI 发布入口”的核心底座。
+项目已经完成“本地可用 + Open WebUI 接入 + 长期记忆基础闭环 + P0 基础服务硬化 + P1 运行质量基础版 + P2 工具层基础版 + P3 Agent 执行、审计与记忆沉淀基础 + P4/N-series 收口任务 + Obsidian 双向同步基础版 + 开源工程化基础 + GitHub CI 发布入口 + 模块 95% 第一轮收口”的核心底座。
 
 按完整 Personal AI OS 愿景估算，整体进度约为 90%左右。按当前阶段目标“可本地长期运行、可开源协作、基础服务可信、工具调用可控可审计、最小 Agent 闭环可验证”估算，进度约为 100%左右。
 
@@ -14,19 +14,27 @@ Obsidian 双向同步已完成基础版：先 dry-run、再 apply，默认非破
 
 | 模块 | 状态 | 功能摘要 |
 | --- | --- | --- |
-| Open WebUI 接入 | 已完成基础版 | 通过 OpenAI-compatible `/v1/models` 和 `/v1/chat/completions` 接入 Web UI |
+| Open WebUI 接入 | 已完成 95% 模板版 | 通过 OpenAI-compatible `/v1/models` 和 `/v1/chat/completions` 接入 Web UI，非流式响应提供 usage 估算 |
 | 聊天持久化 | 已完成基础版 | `/chat` 和 `/v1/chat/completions` 共用消息与记忆持久化逻辑 |
-| 长期记忆写入 | 已完成基础版 | 支持 PostgreSQL、Qdrant、Obsidian 三路写入 |
+| 长期记忆写入 | 已完成 95% 模板版 | 支持 PostgreSQL、Qdrant、Obsidian 三路写入，并在 Qdrant payload 中记录治理 metadata |
 | 记忆检索 | 已完成基础版 | 支持 Qdrant 检索、用户/项目过滤、检索失败降级 |
 | Embedding provider | 已完成基础版 | 支持 `mock` 和 `openai-compatible`，并校验向量维度 |
 | 检索质量评估 | 已完成 N8 基础版 | 支持离线 golden dataset、Qdrant 端到端 hit-rate 评估和手动真实 embedding workflow |
-| Scheduler | 已完成基础版 | 支持定时会话摘要任务 |
+| Scheduler | 已完成 95% 模板版 | 支持定时会话摘要任务和 `/scheduler/status` 只读状态 |
 | Diagnostics API | 已完成基础版 | `/diagnostics` 可检查配置、DB、Qdrant、embedding、model、scheduler |
 | Tool Registry | 已完成基础版 | 支持工具枚举、安全调用边界、HTTP adapter 和 tool run 审计 |
-| Agent Workflow | 已完成模型化 Planner 基础版 | 支持 deterministic Planner、模型化 JSON plan、Planner / Executor 闭环，工具调用走 Tool Registry 并写入 ToolRun |
+| Agent Workflow | 已完成 95% 模板版 | 支持 deterministic Planner、模型化 JSON plan、Planner / Executor 闭环；Researcher、Coder、Memory Agent 已具备基础结构化能力 |
 | Obsidian 同步 | 已完成双向同步基础版 | 支持 vault markdown 幂等导入、双向更新、冲突报告、默认非破坏性删除和 sync state |
-| CLI | 已完成 N9 基础版 | 支持 chat、memory search、Obsidian import、Agent run/history、JSON 输出和错误码 |
+| CLI | 已完成 95% 模板版 | 支持 chat、memory search、Obsidian import、Agent run/history、JSON 输出和错误码 |
 | 开源工程化 | 已完成基础版 | Apache-2.0、CI、Makefile、smoke、CONTRIBUTING、测试文档已具备 |
+
+## 模块 95% 收口
+
+本轮 SPEC：`docs/superpowers/specs/2026-05-07-module-95-completion-spec.md`
+
+本轮计划：`docs/superpowers/plans/2026-05-07-module-95-completion-plan.md`
+
+95% 的定义是：模块存在真实可调用代码路径、有测试覆盖成功/失败/边界场景、scope 不越权、外部输出稳定，剩余 5% 是明确 deferred 的增强项。当前 deferred 项包括最终用户 UI、Obsidian 实时监听、自动冲突合并、真实 provider 默认 CI、分布式任务队列和高级记忆治理工作流。
 
 ## 下一阶段总目标
 
@@ -402,7 +410,7 @@ P3 回归状态：P3-1、P3-2、P3-3、P3-4 和 P3-5 已完成基础版，最近
 Tool Registry、memory governance、request id。
 
 当前实现说明：
-已提供 `AgentWorkflow`、`PlannerAgent.plan()` 和 `ExecutorAgent.execute()`。当前 Planner 仅支持 `read file <path>`、`pwd` / `show cwd`、`git status` 三类确定性任务；unsupported task 返回 `status=error`，不会执行工具或写入 tool run。`POST /agents/run` 会执行最小工作流，并复用 Tool Registry 和 ToolRun 审计。
+已提供 `AgentWorkflow`、`PlannerAgent.plan()` 和 `ExecutorAgent.execute()`。当前 Planner 仅支持 `read file <path>`、`pwd` / `show cwd`、`git status` 三类确定性任务；unsupported task 返回 `status=error`，不会执行工具或写入 tool run。`POST /agents/run` 和兼容入口 `POST /task` 都会执行同一套工作流，并复用 Tool Registry、ToolRun 和 AgentRun 审计。
 
 ### Task P3-2：Structured Agent Plan
 

@@ -284,7 +284,12 @@ class OpenAICompatRouteTests(unittest.TestCase):
         self.assertEqual(result["model"], "personal-ai-os-chat")
         self.assertEqual(result["choices"][0]["message"]["role"], "assistant")
         self.assertEqual(result["choices"][0]["message"]["content"], "兼容层回答")
-        self.assertEqual(result["usage"]["total_tokens"], 0)
+        self.assertGreater(result["usage"]["prompt_tokens"], 0)
+        self.assertGreater(result["usage"]["completion_tokens"], 0)
+        self.assertEqual(
+            result["usage"]["total_tokens"],
+            result["usage"]["prompt_tokens"] + result["usage"]["completion_tokens"],
+        )
         self.assertEqual(len(fake_db.added), 2)
         self.assertEqual(fake_db.added[0].role, "user")
         self.assertEqual(fake_db.added[0].content, "第二问")

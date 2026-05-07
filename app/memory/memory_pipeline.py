@@ -145,6 +145,7 @@ def _build_vector_payload(
     candidate: MemoryCandidate,
     obsidian_path: str,
 ) -> dict:
+    governance = _build_governance_metadata(candidate, obsidian_path)
     return {
         "user_id": user_id,
         "project_id": project_id,
@@ -153,4 +154,20 @@ def _build_vector_payload(
         "title": candidate.title,
         "tags": candidate.tags,
         "obsidian_path": obsidian_path,
+        **governance,
+    }
+
+
+def _build_governance_metadata(candidate: MemoryCandidate, obsidian_path: str | None) -> dict:
+    source = "chat"
+    if candidate.memory_type == "agent_result":
+        source = "agent"
+    elif candidate.memory_type.startswith("obsidian") or candidate.obsidian_path:
+        source = "obsidian"
+
+    importance = max(0, min(10, int(candidate.importance or 0)))
+    return {
+        "source": source,
+        "governance_version": "memory-governance-v1",
+        "quality_score": round(importance / 10, 2),
     }

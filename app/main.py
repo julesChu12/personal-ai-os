@@ -8,6 +8,7 @@ from app.api.routes_sessions import router as sessions_router
 from app.api.routes_agents import router as agents_router
 from app.api.routes_openai_compat import router as openai_compat_router
 from app.api.routes_diagnostics import router as diagnostics_router
+from app.api.routes_scheduler import router as scheduler_router
 from app.api.routes_tools import router as routes_tools_router
 from app.core.errors import register_error_handlers
 from app.core.request_context import register_request_context_middleware
@@ -39,4 +40,5 @@ app.include_router(sessions_router)
 app.include_router(agents_router)
 app.include_router(openai_compat_router)
 app.include_router(diagnostics_router)
+app.include_router(scheduler_router)
 app.include_router(routes_tools_router)
