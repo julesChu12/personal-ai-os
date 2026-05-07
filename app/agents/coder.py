@@ -11,7 +11,7 @@ class CoderAgent:
 
     def summarize_text(self, input_text: str) -> str:
         text = input_text.strip()
-        return text or "No output."
+        return text or "Task completed, but returned no text output."
 
     def summarize_execution(self, task: str, step_results: list[Any]) -> str:
         successful_steps = [step for step in step_results if step.status == "ok" and step.output is not None]

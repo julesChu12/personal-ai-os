@@ -51,7 +51,7 @@ def task(
         session_id=normalize_optional_string(req.session_id),
         task=require_non_blank("task", req.task),
         request_id=_request_id_from_request(request),
-        plan_payload=req.plan,
+        plan_payload=req.plan.model_dump(exclude_unset=True, by_alias=True) if req.plan else None,
         planner_mode=req.planner_mode,
         execution_mode=req.execution_mode,
         persist_agent_result=_should_persist_task_result(req.agents),

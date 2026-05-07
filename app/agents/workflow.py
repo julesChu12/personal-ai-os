@@ -144,8 +144,13 @@ class AgentWorkflow:
                     "memory_saved": memory_saved,
                 }
             )
+        
+        status = "error" if failed else "ok"
+        if failed is None and persist_agent_result and memory_saved == 0:
+            status = "completed_with_warnings"
+            
         response = {
-            "status": "error" if failed else "ok",
+            "status": status,
             "answer": answer,
             "error": failed.error if failed else None,
             "memory_saved": memory_saved,
